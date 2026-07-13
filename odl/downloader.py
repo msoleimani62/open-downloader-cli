@@ -24,8 +24,8 @@ from rich.progress import (
 
 from . import constants as c
 from . import state
-from .config import log_error
 from .errors import CLIENT_FALLBACK_RETRYABLE_CATEGORIES, classify_error
+from .logging_setup import log_download_error, log_info, log_warning
 from .state import console
 
 
@@ -101,10 +101,18 @@ def ydl_opts_base(
     audio_only: bool,
     proxy: Optional[str],
     extractor_args: dict,
+    ignore_errors: bool = True,
 ) -> dict:
     """
-    فارسی: دیکشنری تنظیمات مشترک yt-dlp رو برای همه‌ی انواع دانلود می‌سازه.
-    English: Build the shared yt-dlp options dict used by every download kind.
+    فارسی:
+        دیکشنری تنظیمات مشترک yt-dlp رو برای همه‌ی انواع دانلود می‌سازه.
+        برای دانلود تکی باید ignore_errors=False داده بشه، وگرنه ممکنه
+        خطای واقعی بی‌صدا مخفی بمونه؛ فقط برای پلی‌لیست باید True باشه.
+    English:
+        Build the shared yt-dlp options dict used by every download kind.
+        For single downloads, ignore_errors must be False, otherwise a
+        real error could be silently swallowed; it should only be True
+        for playlists.
     """
     opts = {
         "format": "bestaudio/best" if audio_only else build_format(quality),
@@ -115,7 +123,7 @@ def ydl_opts_base(
         "noprogress": True,
         "quiet": True,
         "no_warnings": True,
-        "ignoreerrors": True,
+        "ignoreerrors": ignore_errors,
         "extractor_args": extractor_args,
     }
     if cookies_path:
@@ -159,12 +167,8 @@ def download_single(
     allow_client_fallback: bool,
 ) -> bool:
     """
-    فارسی: یک ویدیوی تکی رو با نوار پیشرفت زنده دانلود می‌کنه. اگه با یک
-           کلاینت پخش خاص شکست بخوره و خطا از نوع قابل‌حل با تعویض کلاینت
-           باشد، به‌ترتیب کلاینت‌های دیگر را هم امتحان می‌کند.
-    English: Download a single video with a live progress bar. If it fails
-             and the error looks fixable by switching playback clients,
-             other clients are tried in order automatically.
+    فارسی: یک ویدیوی تکی رو با نوار پیشرفت زنده دانلود می‌کنه.
+    English: Download a single video with a live progress bar.
     """
     if not is_youtube_url(url):
         console.print("[red]This does not look like a valid YouTube URL.[/red]")
@@ -173,6 +177,8 @@ def download_single(
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     out_template = str(out_path / "%(title)s.%(ext)s")
+
+    log_info(f"Starting single download: {url}")
 
     with Progress(
         SpinnerColumn(),
@@ -200,7 +206,8 @@ def download_single(
 
         def attempt(current_extractor_args: dict) -> Tuple[bool, Optional[str]]:
             opts = ydl_opts_base(
-                cookies_path, quality, sub_en, sub_fa, out_template, audio_only, proxy, current_extractor_args
+                cookies_path, quality, sub_en, sub_fa, out_template, audio_only, proxy,
+                current_extractor_args, ignore_errors=False,
             )
             opts["progress_hooks"] = [hook]
             try:
@@ -213,6 +220,7 @@ def download_single(
                     traceback.print_exc()
                 return False, str(e)
 
+        tried_clients: list[str] = ["default"]
         ok, err = attempt(extractor_args)
 
         if not ok and allow_client_fallback:
@@ -220,6 +228,8 @@ def download_single(
             if category in CLIENT_FALLBACK_RETRYABLE_CATEGORIES:
                 for client in c.PLAYER_CLIENT_FALLBACK_CHAIN:
                     progress.update(task_id, title=f"Retrying with '{client}' client...")
+                    log_warning(f"Retrying {url} with player_client={client}")
+                    tried_clients.append(client)
                     fallback_args = dict(extractor_args)
                     fallback_args["youtube"] = {"player_client": [client]}
                     ok, err = attempt(fallback_args)
@@ -228,8 +238,37 @@ def download_single(
 
         if ok:
             progress.update(task_id, title="[green]✔ Done[/green]")
+            log_info(f"Successfully downloaded: {url}")
             return True
 
-        console.print(f"[red]Download error ({classify_error(err or '')}): {err}[/red]")
-        log_error(url, err or "unknown error")
+        category = classify_error(err or "")
+        suggestion = _suggestion_for_category(category)
+        console.print(f"\n[red]✘ Download failed[/red]")
+        console.print(f"[yellow]Reason:[/yellow] {category}")
+        if len(tried_clients) > 1:
+            console.print(f"[yellow]Tried clients:[/yellow] {', '.join(tried_clients)}")
+        if suggestion:
+            console.print(f"[cyan]Suggestion:[/cyan] {suggestion}")
+        log_download_error(url, f"[{category}] {err}")
         return False
+
+
+def _suggestion_for_category(category: str) -> str:
+    """
+    فارسی: بر اساس دسته‌ی خطا، یک پیشنهاد کوتاه و عملی به کاربر می‌دهد.
+    English: Give a short, actionable suggestion to the user based on the error category.
+    """
+    from .errors import ErrorCategory
+
+    suggestions = {
+        ErrorCategory.BOT_DETECTED: "Run 'odl --import-cookies' to refresh your cookies, or use --player-client android.",
+        ErrorCategory.LOGIN_REQUIRED: "Run 'odl --import-cookies' to refresh your cookies.",
+        ErrorCategory.COOKIE_INVALID: "Run 'odl --import-cookies' to refresh your cookies.",
+        ErrorCategory.REGION_LOCKED: "Try again with a proxy in an allowed country: odl -x <proxy> <URL>.",
+        ErrorCategory.NETWORK_ERROR: "Check your internet connection and try again.",
+        ErrorCategory.PROXY_ERROR: "Check that your proxy is running and reachable.",
+        ErrorCategory.PRIVATE_VIDEO: "This video is private; nothing can be done from this side.",
+        ErrorCategory.DELETED_VIDEO: "This video was deleted or made unavailable by its owner.",
+        ErrorCategory.MEMBERS_ONLY: "This video requires a paid channel membership.",
+    }
+    return suggestions.get(category, "Run 'odl --doctor' to check your installation, or 'odl --debug' for details.")

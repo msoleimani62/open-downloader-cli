@@ -1,15 +1,18 @@
 """
-فارسی: ابزارهای تشخیصی — بررسی/انجام آپدیت yt-dlp و بررسی سلامت نصب.
-English: Diagnostic tools — checking/performing yt-dlp updates and installation health checks.
+فارسی: ابزارهای تشخیصی — بررسی/انجام آپدیت yt-dlp، بررسی خود‌آپدیت odl، و بررسی سلامت نصب.
+English: Diagnostic tools — checking/performing yt-dlp updates, checking
+         odl's own self-update, and installation health checks.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
 import subprocess
 import sys
+import urllib.request
 
 import yt_dlp
 from rich.panel import Panel
@@ -18,6 +21,49 @@ from rich.table import Table
 from . import constants as c
 from .cookies import CRYPTO_AVAILABLE, is_desktop_linux
 from .state import console
+
+
+def _parse_version_tuple(version_str: str) -> tuple:
+    """
+    فارسی: رشته‌ی نسخه (مثل «2.1.0» یا «v2.1.0») را به یک تاپل قابل‌مقایسه تبدیل می‌کند.
+    English: Convert a version string (e.g. "2.1.0" or "v2.1.0") into a comparable tuple.
+    """
+    cleaned = version_str.strip().lstrip("vV")
+    parts = []
+    for piece in cleaned.split("."):
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def run_check_self_update() -> None:
+    """
+    فارسی: نسخه‌ی نصب‌شده‌ی odl را با آخرین ریلیز گیت‌هاب مقایسه می‌کند
+           (فقط بررسی می‌کند، خودش چیزی را آپدیت نمی‌کند).
+    English: Compare the installed odl version against the latest GitHub
+             release (check only, does not update anything itself).
+    """
+    console.print("[cyan]Checking for a newer version of Open Downloader CLI...[/cyan]")
+    url = f"https://api.github.com/repos/{c.GITHUB_REPO}/releases/latest"
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        latest_tag = data.get("tag_name", "")
+        if not latest_tag:
+            console.print("[yellow]Could not determine the latest release.[/yellow]")
+            return
+
+        current = _parse_version_tuple(c.ODL_VERSION)
+        latest = _parse_version_tuple(latest_tag)
+
+        if latest > current:
+            console.print(f"[yellow]A newer version is available: {latest_tag} (you have {c.ODL_VERSION}).[/yellow]")
+            console.print(f"[cyan]Get it from: https://github.com/{c.GITHUB_REPO}/releases/latest[/cyan]")
+        else:
+            console.print(f"[green]You're up to date (version {c.ODL_VERSION}).[/green]")
+    except Exception as e:
+        console.print(f"[yellow]Could not check for updates: {e}[/yellow]")
 
 
 def run_check_update() -> None:
@@ -65,8 +111,8 @@ def run_update() -> None:
 
 def run_doctor() -> None:
     """
-    فارسی: وضعیت کلی نصب (پایتون، yt-dlp، ffmpeg، کتابخانه‌ها، کوکی، دسترسی‌ها) را بررسی و گزارش می‌دهد.
-    English: Check and report the overall installation health (Python, yt-dlp, ffmpeg, libraries, cookies, permissions).
+    فارسی: وضعیت کلی نصب را بررسی و گزارش می‌دهد.
+    English: Check and report the overall installation health.
     """
     table = Table(title="Open Downloader CLI — Doctor", show_header=False, box=None)
 

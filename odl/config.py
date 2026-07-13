@@ -1,13 +1,25 @@
 """
-فارسی: خواندن/نوشتن فایل کانفیگ کاربر و چرخش فایل لاگ.
-English: Reading/writing the user config file and rotating the log file.
+فارسی: خواندن/نوشتن فایل کانفیگ کاربر، و توابع کمکی برای دستورات
+       «--config» (نمایش) و «--set» (تغییر تنظیمات).
+English: Reading/writing the user config file, and helper functions for
+         the "--config" (display) and "--set" (change settings) commands.
 """
 
 from __future__ import annotations
 
 import json
+from typing import Optional
 
 from . import constants as c
+
+_SETTABLE_KEYS = {
+    "quality": int,
+    "download_dir": str,
+    "batch_size": int,
+    "proxy": str,
+    "player_client": str,
+    "bypass": bool,
+}
 
 
 def load_config() -> dict:
@@ -58,30 +70,53 @@ def save_default_config() -> None:
             )
 
 
-def rotate_log() -> None:
+def write_config(cfg: dict) -> None:
     """
-    فارسی: فایل لاگ را برای جلوگیری از رشد بی‌رویه، به حداکثر MAX_LOG_LINES خط محدود می‌کند.
-    English: Trim the log file to at most MAX_LOG_LINES lines to prevent unbounded growth.
+    فارسی: دیکشنری تنظیمات را کامل روی فایل کانفیگ می‌نویسد.
+    English: Write a full settings dict to the config file.
     """
-    if not c.LOG_FILE.exists():
-        return
-    try:
-        lines = c.LOG_FILE.read_text(encoding="utf-8").splitlines()
-        if len(lines) > c.MAX_LOG_LINES:
-            with open(c.LOG_FILE, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines[-c.MAX_LOG_LINES:]) + "\n")
-    except Exception:
-        pass
-
-
-def log_error(url: str, message: str) -> None:
-    """
-    فارسی: خطای دانلود یک لینک رو با زمان‌مهر به فایل لاگ اضافه می‌کنه و لاگ رو می‌چرخاند.
-    English: Append a timestamped download error for a URL to the log file and rotate it.
-    """
-    import time
-
     c.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(c.LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {url} -> {message}\n")
-    rotate_log()
+    with open(c.CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+def parse_set_argument(arg: str) -> tuple[str, object]:
+    """
+    فارسی: یک آرگومان به‌شکل «کلید=مقدار» (مثل quality=720) را پارس کرده
+           و مقدار را به نوع درست تبدیل می‌کند.
+    English: Parse a "key=value" argument (e.g. quality=720) and convert
+             the value to the correct type.
+
+    Returns:
+        (key, converted_value)
+    """
+    if "=" not in arg:
+        raise ValueError(f"Invalid format '{arg}', expected key=value")
+
+    key, raw_value = arg.split("=", 1)
+    key = key.strip()
+    raw_value = raw_value.strip()
+
+    if key not in _SETTABLE_KEYS:
+        allowed = ", ".join(sorted(_SETTABLE_KEYS))
+        raise ValueError(f"Unknown setting '{key}'. Allowed: {allowed}")
+
+    value_type = _SETTABLE_KEYS[key]
+
+    if raw_value.lower() in ("none", "null", ""):
+        return key, None
+
+    if value_type is bool:
+        if raw_value.lower() in ("true", "1", "yes"):
+            return key, True
+        if raw_value.lower() in ("false", "0", "no"):
+            return key, False
+        raise ValueError(f"'{key}' expects true/false, got '{raw_value}'")
+
+    if value_type is int:
+        try:
+            return key, int(raw_value)
+        except ValueError:
+            raise ValueError(f"'{key}' expects an integer, got '{raw_value}'")
+
+    return key, raw_value

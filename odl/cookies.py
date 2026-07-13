@@ -355,6 +355,9 @@ def print_cookie_status() -> None:
     table = Table(show_header=False, box=None)
     if c.ENCRYPTED_COOKIES_FILE.exists():
         table.add_row("[bold]Status[/bold]", "[green]Encrypted[/green]")
+        perm = oct(c.ENCRYPTED_COOKIES_FILE.stat().st_mode)[-3:]
+        perm_display = f"[green]{perm}[/green]" if perm == "600" else f"[yellow]{perm} (expected 600)[/yellow]"
+        table.add_row("[bold]Permissions[/bold]", perm_display)
         try:
             with open(c.ENCRYPTED_COOKIES_FILE, "r", encoding="utf-8") as f:
                 payload = json.load(f)

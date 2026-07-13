@@ -14,7 +14,7 @@ import yt_dlp
 
 from . import constants as c
 from . import state
-from .config import load_config, save_default_config, rotate_log
+from .config import load_config, parse_set_argument, save_default_config, write_config
 from .cookies import (
     find_and_import_cookies_automatically,
     print_cookie_export_guide,
@@ -24,7 +24,7 @@ from .cookies import (
     secure_cookies_setup,
     try_automatic_cookie_import,
 )
-from .diagnostics import run_check_update, run_doctor, run_update
+from .diagnostics import run_check_self_update, run_check_update, run_doctor, run_update
 from .downloader import build_extractor_args, download_single
 from .playlist import download_playlist
 from .state import console
@@ -99,8 +99,55 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--update", action="store_true",
         help="update yt-dlp to the latest version",
     )
+    parser.add_argument(
+        "--check-self-update", action="store_true",
+        help="check whether a newer version of Open Downloader CLI itself is available",
+    )
+    parser.add_argument(
+        "--config", action="store_true",
+        help="show the current configuration settings",
+    )
+    parser.add_argument(
+        "--set", type=str, default=None, metavar="KEY=VALUE",
+        help="change a configuration setting, e.g. --set quality=720",
+    )
     parser.add_argument("--version", action="version", version=f"Open Downloader CLI (odl) {c.ODL_VERSION}")
     return parser
+
+
+def _run_show_config() -> None:
+    """
+    فارسی: تنظیمات فعلی را در یک جدول نمایش می‌دهد.
+    English: Display the current settings in a table.
+    """
+    from rich.panel import Panel
+    from rich.table import Table
+
+    cfg = load_config()
+    table = Table(show_header=False, box=None)
+    for key, value in cfg.items():
+        if key == "cookies":
+            continue
+        table.add_row(f"[bold]{key}[/bold]", str(value) if value is not None else "[dim]not set[/dim]")
+    console.print(Panel(table, title="Current Configuration", border_style="cyan"))
+    console.print(f"[dim]Config file: {c.CONFIG_FILE}[/dim]")
+
+
+def _run_set_config(arg: str) -> None:
+    """
+    فارسی: یک تنظیم را تغییر می‌دهد و روی فایل کانفیگ ذخیره می‌کند.
+    English: Change one setting and save it to the config file.
+    """
+    try:
+        key, value = parse_set_argument(arg)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    cfg = load_config()
+    cfg[key] = value
+    write_config(cfg)
+    console.print(f"[green]✔ {key} set to {value!r}[/green]")
 
 
 def main() -> None:
@@ -117,6 +164,18 @@ def main() -> None:
 
     if args.update:
         run_update()
+        sys.exit(0)
+
+    if args.check_self_update:
+        run_check_self_update()
+        sys.exit(0)
+
+    if args.config:
+        _run_show_config()
+        sys.exit(0)
+
+    if args.set:
+        _run_set_config(args.set)
         sys.exit(0)
 
     if args.cookie_status:
@@ -146,7 +205,6 @@ def main() -> None:
 
     cfg = load_config()
     save_default_config()
-    rotate_log()
 
     quality = args.quality if args.quality else cfg.get("quality", c.DEFAULT_QUALITY)
     if quality not in c.ALLOWED_QUALITIES:

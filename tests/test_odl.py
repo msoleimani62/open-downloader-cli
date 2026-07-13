@@ -15,9 +15,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from odl import constants as c
+
 from odl import cookies
 from odl import downloader
+from odl import config as config_module
+from odl import playlist_state
+from odl.diagnostics import _parse_version_tuple
 from odl.errors import ErrorCategory, CLIENT_FALLBACK_RETRYABLE_CATEGORIES, classify_error
+
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +32,8 @@ def isolated_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(c, "COOKIES_DEFAULT", tmp_path / "cookies.txt")
     monkeypatch.setattr(c, "ENCRYPTED_COOKIES_FILE", tmp_path / ".config" / "opendl" / "cookies.enc")
     monkeypatch.setattr(c, "LOG_FILE", tmp_path / ".config" / "opendl" / "opendl.log")
+    monkeypatch.setattr(c, "LOG_DIR", tmp_path / ".config" / "opendl" / "logs")
+    monkeypatch.setattr(c, "PLAYLIST_STATE_DIR", tmp_path / ".config" / "opendl" / "playlist_state")
     yield
 
 
@@ -209,3 +216,107 @@ class TestEnvironmentDetection:
         monkeypatch.setenv("TERMUX_VERSION", "0.118")
         monkeypatch.setattr(cookies.sys, "platform", "linux")
         assert cookies.is_desktop_linux() is False
+class TestPlaylistState:
+    def test_no_state_returns_empty_set(self):
+        assert playlist_state.load_completed_ids("https://youtube.com/playlist?list=A") == set()
+
+    def test_mark_and_load_completed(self):
+        url = "https://youtube.com/playlist?list=B"
+        playlist_state.mark_completed(url, "vid1")
+        playlist_state.mark_completed(url, "vid2")
+        assert playlist_state.load_completed_ids(url) == {"vid1", "vid2"}
+
+    def test_mark_completed_ignores_none_id(self):
+        url = "https://youtube.com/playlist?list=C"
+        playlist_state.mark_completed(url, None)
+        assert playlist_state.load_completed_ids(url) == set()
+
+    def test_clear_state_removes_file(self):
+        url = "https://youtube.com/playlist?list=D"
+        playlist_state.mark_completed(url, "vid1")
+        assert playlist_state.load_completed_ids(url) == {"vid1"}
+        playlist_state.clear_state(url)
+        assert playlist_state.load_completed_ids(url) == set()
+
+    def test_different_playlists_have_independent_state(self):
+        url_a = "https://youtube.com/playlist?list=E1"
+        url_b = "https://youtube.com/playlist?list=E2"
+        playlist_state.mark_completed(url_a, "vidA")
+        assert playlist_state.load_completed_ids(url_b) == set()
+
+
+class TestConfigSetParsing:
+    def test_parse_int_setting(self):
+        key, value = config_module.parse_set_argument("quality=720")
+        assert key == "quality"
+        assert value == 720
+
+    def test_parse_string_setting(self):
+        key, value = config_module.parse_set_argument("download_dir=/tmp/videos")
+        assert key == "download_dir"
+        assert value == "/tmp/videos"
+
+    def test_parse_bool_setting_true(self):
+        key, value = config_module.parse_set_argument("bypass=true")
+        assert value is True
+
+    def test_parse_bool_setting_false(self):
+        key, value = config_module.parse_set_argument("bypass=false")
+        assert value is False
+
+    def test_parse_none_setting(self):
+        key, value = config_module.parse_set_argument("proxy=none")
+        assert value is None
+
+    def test_unknown_key_raises(self):
+        with pytest.raises(ValueError):
+            config_module.parse_set_argument("nonsense=1")
+
+    def test_missing_equals_raises(self):
+        with pytest.raises(ValueError):
+            config_module.parse_set_argument("quality720")
+
+    def test_invalid_int_raises(self):
+        with pytest.raises(ValueError):
+            config_module.parse_set_argument("quality=notanumber")
+
+    def test_set_and_load_roundtrip(self):
+        cfg = config_module.load_config()
+        cfg["quality"] = 1080
+        config_module.write_config(cfg)
+        reloaded = config_module.load_config()
+        assert reloaded["quality"] == 1080
+
+
+class TestSelfUpdateVersionCompare:
+    def test_simple_versions(self):
+        assert _parse_version_tuple("2.1.0") == (2, 1, 0)
+
+    def test_v_prefix_is_stripped(self):
+        assert _parse_version_tuple("v2.1.0") == (2, 1, 0)
+
+    def test_double_digit_minor_sorts_correctly(self):
+        assert _parse_version_tuple("2.10.0") > _parse_version_tuple("2.9.0")
+
+    def test_equal_versions(self):
+        assert _parse_version_tuple("2.1.0") == _parse_version_tuple("2.1.0")
+
+
+class TestIgnoreErrorsBehavior:
+    def test_single_download_defaults_to_ignore_errors_false(self):
+        opts = downloader.ydl_opts_base(
+            None, 480, False, False, "%(title)s.%(ext)s", False, None, {}, ignore_errors=False
+        )
+        assert opts["ignoreerrors"] is False
+
+    def test_playlist_download_uses_ignore_errors_true(self):
+        opts = downloader.ydl_opts_base(
+            None, 480, False, False, "%(title)s.%(ext)s", False, None, {}, ignore_errors=True
+        )
+        assert opts["ignoreerrors"] is True
+
+    def test_ignore_errors_defaults_to_true_when_unspecified(self):
+        opts = downloader.ydl_opts_base(
+            None, 480, False, False, "%(title)s.%(ext)s", False, None, {}
+        )
+        assert opts["ignoreerrors"] is True

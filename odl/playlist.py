@@ -26,9 +26,10 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 from . import state
-from .config import log_error
 from .downloader import build_format, human_size, resolve_video_url, ydl_opts_base
 from .errors import CLIENT_FALLBACK_RETRYABLE_CATEGORIES, classify_error
+from .logging_setup import log_download_error, log_info, log_warning
+from .playlist_state import clear_state, load_completed_ids, mark_completed
 from .state import console
 from .constants import PLAYER_CLIENT_FALLBACK_CHAIN
 
@@ -105,26 +106,29 @@ def _print_playlist_summary(
 
 
 def _print_download_summary(
-    results: list[tuple[int, str, bool]],
+    results: list[tuple[int, str, bool, str]],
     total_count: int,
     elapsed_seconds: Optional[float] = None,
     total_estimated_size: Optional[int] = None,
 ) -> None:
     """
-    فارسی: جدول نتیجه‌ی نهایی دانلود پلی‌لیست را به همراه زمان سپری‌شده و سرعت میانگین چاپ می‌کند.
-    English: Print the final results table for a playlist download, including elapsed time and average speed.
+    فارسی: جدول نتیجه‌ی نهایی دانلود پلی‌لیست را به همراه زمان سپری‌شده،
+           سرعت میانگین، و شکست‌ها به‌تفکیک دسته چاپ می‌کند.
+    English: Print the final results table for a playlist download,
+             including elapsed time, average speed, and failures broken
+             down by category.
     """
     summary = Table(title="Download Summary")
     summary.add_column("#", justify="right")
     summary.add_column("Title")
     summary.add_column("Status", justify="center")
-    for idx, title, ok in sorted(results, key=lambda r: r[0]):
-        status = "[green]✔ success[/green]" if ok else "[red]✘ failed[/red]"
+    for idx, title, ok, category in sorted(results, key=lambda r: r[0]):
+        status = "[green]✔ success[/green]" if ok else f"[red]✘ {category}[/red]"
         short_title = (title[:50] + "...") if len(title) > 50 else title
         summary.add_row(str(idx), short_title, status)
     console.print(summary)
 
-    success_count = sum(1 for _, _, ok in results if ok)
+    success_count = sum(1 for _, _, ok, _ in results if ok)
     console.print(f"\n[bold green]{success_count} of {total_count} videos downloaded successfully.[/bold green]")
 
     if elapsed_seconds:
@@ -135,8 +139,15 @@ def _print_download_summary(
             console.print(f"[cyan]Average speed: {human_size(avg_speed)}/s[/cyan]")
 
     if success_count < total_count:
+        failure_counts: dict[str, int] = {}
+        for _, _, ok, category in results:
+            if not ok:
+                failure_counts[category] = failure_counts.get(category, 0) + 1
+        console.print("\n[bold yellow]Failures by category:[/bold yellow]")
+        for category, cnt in sorted(failure_counts.items(), key=lambda kv: -kv[1]):
+            console.print(f"  {category}: {cnt}")
         from . import constants as c
-        console.print(f"[yellow]See this log file for error details: {c.LOG_FILE}[/yellow]")
+        console.print(f"\n[yellow]See this log file for error details: {c.LOG_DIR / 'errors.log'}[/yellow]")
 
 
 def download_playlist(
@@ -158,12 +169,13 @@ def download_playlist(
     English: Download an entire playlist in batches, after user confirmation.
     """
     console.print("[cyan]Fetching video list...[/cyan]")
+    log_info(f"Starting playlist download: {url}")
     try:
         entries, playlist_title = fetch_playlist_entries(url, cookies_path, proxy, extractor_args)
     except Exception as e:
         console.print(f"[red]Error fetching the playlist: {e}[/red]")
         console.print("[yellow]The cookie may have expired, or the current exit node is blocked.[/yellow]")
-        log_error(url, str(e))
+        log_download_error(url, str(e))
         return
 
     if not entries:
@@ -171,6 +183,10 @@ def download_playlist(
         return
 
     count = len(entries)
+
+    completed_ids = load_completed_ids(url)
+    if completed_ids:
+        console.print(f"[cyan]Resuming: {len(completed_ids)} video(s) already completed in a previous run.[/cyan]")
 
     total_size = 0
     if skip_estimate:
@@ -194,9 +210,9 @@ def download_playlist(
     out_path = Path(out_dir) / playlist_title
     out_path.mkdir(parents=True, exist_ok=True)
 
-    results: list[tuple[int, str, bool]] = []
+    results: list[tuple[int, str, bool, str]] = []
     videos = [
-        (i + 1, resolve_video_url(entry), entry.get("title") or "untitled")
+        (i + 1, resolve_video_url(entry), entry.get("title") or "untitled", entry.get("id"))
         for i, entry in enumerate(entries)
     ]
 
@@ -218,15 +234,20 @@ def download_playlist(
             batch = videos[batch_start:batch_start + batch_size]
             task_ids: dict[int, int] = {}
 
-            for idx, video_url, title in batch:
+            for idx, video_url, title, video_id in batch:
                 short_title = (title[:35] + "...") if len(title) > 35 else title
                 task_ids[idx] = progress.add_task("dl", title=f"[{idx}] {short_title}", total=None)
 
-            def worker(idx: int, video_url: Optional[str], title: str, task_id: int) -> tuple[int, str, bool]:
+            def worker(idx: int, video_url: Optional[str], title: str, video_id: Optional[str], task_id: int) -> tuple[int, str, bool, str]:
                 if not video_url:
                     progress.update(task_id, title=f"[red]✘ [{idx}] invalid URL[/red]")
                     progress.update(overall_task, advance=1)
-                    return idx, title, False
+                    return idx, title, False, "Invalid URL"
+
+                if video_id and video_id in completed_ids:
+                    progress.update(task_id, title=f"[green]✔ [{idx}] {title[:35]} (resumed)[/green]")
+                    progress.update(overall_task, advance=1)
+                    return idx, title, True, ""
 
                 out_template = str(out_path / f"{idx:03d} - %(title)s.%(ext)s")
                 short_title = (title[:35] + "...") if len(title) > 35 else title
@@ -242,7 +263,8 @@ def download_playlist(
 
                 def attempt(current_extractor_args: dict) -> Tuple[bool, Optional[str]]:
                     opts = ydl_opts_base(
-                        cookies_path, quality, sub_en, sub_fa, out_template, audio_only, proxy, current_extractor_args
+                        cookies_path, quality, sub_en, sub_fa, out_template, audio_only, proxy,
+                        current_extractor_args, ignore_errors=True,
                     )
                     opts["progress_hooks"] = [hook]
                     try:
@@ -260,6 +282,7 @@ def download_playlist(
                     category = classify_error(err or "")
                     if category in CLIENT_FALLBACK_RETRYABLE_CATEGORIES:
                         for client in PLAYER_CLIENT_FALLBACK_CHAIN:
+                            log_warning(f"Retrying {video_url} with player_client={client}")
                             fallback_args = dict(extractor_args)
                             fallback_args["youtube"] = {"player_client": [client]}
                             ok, err = attempt(fallback_args)
@@ -270,19 +293,24 @@ def download_playlist(
 
                 if ok:
                     progress.update(task_id, title=f"[green]✔ [{idx}] {short_title}[/green]")
-                    return idx, title, True
+                    mark_completed(url, video_id)
+                    return idx, title, True, ""
 
+                category = classify_error(err or "unknown error")
                 progress.update(task_id, title=f"[red]✘ [{idx}] {short_title}[/red]")
-                log_error(video_url, err or "unknown error")
-                return idx, title, False
+                log_download_error(video_url, f"[{category}] {err}")
+                return idx, title, False, category
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(batch)) as executor:
                 futures = [
-                    executor.submit(worker, idx, video_url, title, task_ids[idx])
-                    for idx, video_url, title in batch
+                    executor.submit(worker, idx, video_url, title, video_id, task_ids[idx])
+                    for idx, video_url, title, video_id in batch
                 ]
                 for future in concurrent.futures.as_completed(futures):
                     results.append(future.result())
 
     elapsed = time.time() - start_time
+    success_count = sum(1 for _, _, ok, _ in results if ok)
+    if success_count == count:
+        clear_state(url)
     _print_download_summary(results, count, elapsed, total_size if not skip_estimate else None)
