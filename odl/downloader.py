@@ -26,6 +26,7 @@ from . import constants as c
 from . import state
 from .errors import CLIENT_FALLBACK_RETRYABLE_CATEGORIES, classify_error
 from .logging_setup import log_debug_traceback, log_download_error, log_info, log_warning
+from .models import DownloadEvent, DownloadEventCallback, DownloadRequest, DownloadResult
 from .state import console
 
 
@@ -154,6 +155,95 @@ def ydl_opts_base(
     return opts
 
 
+def attempt_download_with_fallback(
+    request: DownloadRequest,
+    ignore_errors: bool,
+    on_event: Optional[DownloadEventCallback] = None,
+) -> DownloadResult:
+    """
+    فارسی:
+        هسته‌ی خالص دانلود با تلاش مجدد و fallback خودکار کلاینت پخش —
+        بدون هیچ وابستگی به Rich، console، یا ترمینال. این تابع مشترک
+        هم توسط دانلود تکی (پایین همین فایل) و هم توسط هر ویدیوی پلی‌لیست
+        (در playlist.py) استفاده می‌شود؛ قبلاً این منطق در دو جا کپی شده بود.
+        پیشرفت و تغییرات وضعیت از طریق callback اختیاری on_event گزارش می‌شود
+        تا CLI با Rich، GUI با Qt signal، و اندروید با Callback کاتلین بتوانند
+        هرکدام به روش خودشان نمایشش بدهند.
+    English:
+        Pure download core with retry and automatic playback-client
+        fallback — no dependency on Rich, console, or a terminal. This
+        function is shared by both single-video download (below in this
+        file) and each playlist video (in playlist.py); this logic used
+        to be duplicated in both places. Progress and status changes are
+        reported through the optional on_event callback so the CLI (Rich),
+        GUI (Qt signal), and Android (Kotlin callback) can each display
+        it in their own way.
+    """
+
+    def hook(d: dict) -> None:
+        if on_event is None:
+            return
+        if d["status"] == "downloading":
+            total = d.get("total_bytes") or d.get("total_bytes_estimate")
+            downloaded = d.get("downloaded_bytes", 0)
+            info = d.get("info_dict") or {}
+            on_event(
+                DownloadEvent(
+                    kind="progress",
+                    downloaded_bytes=downloaded,
+                    total_bytes=total,
+                    title=info.get("title"),
+                )
+            )
+        elif d["status"] == "finished":
+            on_event(DownloadEvent(kind="status", message="finalizing"))
+
+    def attempt(current_extractor_args: dict) -> Tuple[bool, Optional[str]]:
+        opts = ydl_opts_base(
+            request.cookies_path, request.quality, request.sub_en, request.sub_fa,
+            request.out_template, request.audio_only, request.proxy,
+            current_extractor_args, ignore_errors=ignore_errors,
+        )
+        opts["progress_hooks"] = [hook]
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([request.url])
+            return True, None
+        except Exception as e:
+            # فارسی: traceback همیشه در فایل لاگ ذخیره می‌شود؛ چاپ روی ترمینال
+            #        دیگر اینجا انجام نمی‌شود چون این تابع دیگر UI-agnostic است
+            #        (تصمیم چاپ یا نه، بر عهده‌ی لایه‌ی CLI/GUI باقی می‌ماند).
+            # English: The traceback is always persisted to the log file;
+            #          printing to the terminal no longer happens here since
+            #          this function is now UI-agnostic (whether to print is
+            #          left to the CLI/GUI layer).
+            log_debug_traceback(traceback.format_exc())
+            return False, str(e)
+
+    tried_clients: list = ["default"]
+    ok, err = attempt(request.extractor_args)
+
+    if not ok and request.allow_client_fallback:
+        category = classify_error(err or "")
+        if category in CLIENT_FALLBACK_RETRYABLE_CATEGORIES:
+            for client in c.PLAYER_CLIENT_FALLBACK_CHAIN:
+                if on_event is not None:
+                    on_event(DownloadEvent(kind="retry", client=client))
+                log_warning(f"Retrying {request.url} with player_client={client}")
+                tried_clients.append(client)
+                fallback_args = dict(request.extractor_args)
+                fallback_args["youtube"] = {"player_client": [client]}
+                ok, err = attempt(fallback_args)
+                if ok:
+                    break
+
+    if ok:
+        return DownloadResult(ok=True, tried_clients=tried_clients)
+
+    category = classify_error(err or "")
+    return DownloadResult(ok=False, error_message=err, error_category=category, tried_clients=tried_clients)
+
+
 def download_single(
     url: str,
     cookies_path: Optional[str],
@@ -168,7 +258,15 @@ def download_single(
 ) -> bool:
     """
     فارسی: یک ویدیوی تکی رو با نوار پیشرفت زنده دانلود می‌کنه.
-    English: Download a single video with a live progress bar.
+           این تابع فقط یک wrapper نازک روی Rich است؛ منطق واقعی در
+           attempt_download_with_fallback (بالا) قرار دارد. امضای این
+           تابع عمداً بدون تغییر باقی مانده تا نقطه‌ی فراخوانی در cli.py
+           نیازی به تغییر نداشته باشد.
+    English: Download a single video with a live progress bar. This is now
+             just a thin Rich wrapper; the real logic lives in
+             attempt_download_with_fallback (above). This function's
+             signature was deliberately kept unchanged so the call site in
+             cli.py doesn't need to change.
     """
     if not is_youtube_url(url):
         console.print("[red]This does not look like a valid YouTube URL.[/red]")
@@ -179,6 +277,19 @@ def download_single(
     out_template = str(out_path / "%(title)s.%(ext)s")
 
     log_info(f"Starting single download: {url}")
+
+    request = DownloadRequest(
+        url=url,
+        out_template=out_template,
+        cookies_path=cookies_path,
+        quality=quality,
+        sub_en=sub_en,
+        sub_fa=sub_fa,
+        audio_only=audio_only,
+        proxy=proxy,
+        extractor_args=extractor_args,
+        allow_client_fallback=allow_client_fallback,
+    )
 
     with Progress(
         SpinnerColumn(),
@@ -191,71 +302,35 @@ def download_single(
     ) as progress:
         task_id = progress.add_task("download", title="Fetching info...", total=None)
 
-        def hook(d: dict) -> None:
-            if d["status"] == "downloading":
-                total = d.get("total_bytes") or d.get("total_bytes_estimate")
-                downloaded = d.get("downloaded_bytes", 0)
-                if total:
-                    progress.update(task_id, total=total, completed=downloaded)
-                info = d.get("info_dict") or {}
-                title = info.get("title")
-                if title:
-                    progress.update(task_id, title=title[:40])
-            elif d["status"] == "finished":
+        def on_event(evt: DownloadEvent) -> None:
+            if evt.kind == "progress":
+                if evt.total_bytes:
+                    progress.update(task_id, total=evt.total_bytes, completed=evt.downloaded_bytes)
+                if evt.title:
+                    progress.update(task_id, title=evt.title[:40])
+            elif evt.kind == "status":
                 progress.update(task_id, title="Finalizing (merge)...")
+            elif evt.kind == "retry":
+                progress.update(task_id, title=f"Retrying with '{evt.client}' client...")
 
-        def attempt(current_extractor_args: dict) -> Tuple[bool, Optional[str]]:
-            opts = ydl_opts_base(
-                cookies_path, quality, sub_en, sub_fa, out_template, audio_only, proxy,
-                current_extractor_args, ignore_errors=False,
-            )
-            opts["progress_hooks"] = [hook]
-            try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
-                return True, None
-            except Exception as e:
-                # فارسی: traceback همیشه (نه فقط در حالت --debug) در فایل لاگ ذخیره
-                #        می‌شود؛ چاپ روی ترمینال فقط در حالت --debug انجام می‌شود.
-                # English: The traceback is always persisted to the log file (not
-                #          only in --debug mode); printing to the terminal only
-                #          happens in --debug mode.
-                log_debug_traceback(traceback.format_exc())
-                if state.DEBUG:
-                    console.print("[red]--- DEBUG: full traceback ---[/red]")
-                    traceback.print_exc()
-                return False, str(e)
+        if state.DEBUG:
+            console.print(f"[dim]Debug: full traceback for any failure is in {c.LOG_DIR}[/dim]")
 
-        tried_clients: list[str] = ["default"]
-        ok, err = attempt(extractor_args)
+        result = attempt_download_with_fallback(request, ignore_errors=False, on_event=on_event)
 
-        if not ok and allow_client_fallback:
-            category = classify_error(err or "")
-            if category in CLIENT_FALLBACK_RETRYABLE_CATEGORIES:
-                for client in c.PLAYER_CLIENT_FALLBACK_CHAIN:
-                    progress.update(task_id, title=f"Retrying with '{client}' client...")
-                    log_warning(f"Retrying {url} with player_client={client}")
-                    tried_clients.append(client)
-                    fallback_args = dict(extractor_args)
-                    fallback_args["youtube"] = {"player_client": [client]}
-                    ok, err = attempt(fallback_args)
-                    if ok:
-                        break
-
-        if ok:
+        if result.ok:
             progress.update(task_id, title="[green]✔ Done[/green]")
             log_info(f"Successfully downloaded: {url}")
             return True
 
-        category = classify_error(err or "")
-        suggestion = _suggestion_for_category(category)
+        suggestion = _suggestion_for_category(result.error_category or "")
         console.print(f"\n[red]✘ Download failed[/red]")
-        console.print(f"[yellow]Reason:[/yellow] {category}")
-        if len(tried_clients) > 1:
-            console.print(f"[yellow]Tried clients:[/yellow] {', '.join(tried_clients)}")
+        console.print(f"[yellow]Reason:[/yellow] {result.error_category}")
+        if len(result.tried_clients) > 1:
+            console.print(f"[yellow]Tried clients:[/yellow] {', '.join(result.tried_clients)}")
         if suggestion:
             console.print(f"[cyan]Suggestion:[/cyan] {suggestion}")
-        log_download_error(url, f"[{category}] {err}")
+        log_download_error(url, f"[{result.error_category}] {result.error_message}")
         return False
 
 

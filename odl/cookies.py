@@ -271,6 +271,52 @@ def derive_key(password: str, salt: bytes, iterations: Optional[int] = None) -> 
     return base64.urlsafe_b64encode(kdf.derive(password.encode("utf-8")))
 
 
+def encrypt_cookie_data(plain_data: bytes, master_password: str) -> dict:
+    """
+    فارسی: رمزنگاری خالص کوکی — بدون هیچ چاپ، پرسش تعاملی، یا نوشتن فایل.
+           فقط payload آماده برای ذخیره را برمی‌گرداند. این تابع مستقیماً
+           از GUI و لایه‌ی Chaquopی روی اندروید هم قابل فراخوانی است.
+    English: Pure cookie encryption — no printing, no interactive prompt, no
+             file writing. Just returns the payload ready to be persisted.
+             This function can be called directly from the GUI and the
+             Chaquopy layer on Android too.
+    """
+    salt = os.urandom(16)
+    key = derive_key(master_password, salt)
+    fernet = Fernet(key)
+    token = fernet.encrypt(plain_data)
+    return {
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "data": token.decode("ascii"),
+        "imported_at": time.time(),
+        "pbkdf2_iterations": c.PBKDF2_ITERATIONS,
+    }
+
+
+def decrypt_cookie_payload(payload: dict, master_password: str) -> bytes:
+    """
+    فارسی: رمزگشایی خالص کوکی. در صورت رمز اشتباه، استثنای
+           cryptography.fernet.InvalidToken می‌اندازد (خودش را نمی‌گیرد)،
+           تا تصمیم نمایش پیام خطا بر عهده‌ی لایه‌ی UI باقی بماند.
+    English: Pure cookie decryption. Raises
+             cryptography.fernet.InvalidToken on a wrong password (does not
+             catch it itself), leaving the decision of how to display the
+             error message to the UI layer.
+    """
+    salt = base64.b64decode(payload["salt"])
+    token = payload["data"].encode("ascii")
+    # فارسی: فایل‌های رمزنگاری‌شده‌ی قدیمی‌تر از این فیکس، مقدار
+    #        pbkdf2_iterations را ذخیره نکرده‌اند؛ برای آن‌ها از مقدار
+    #        قدیمی (که قبلاً هاردکد بود) استفاده می‌کنیم.
+    # English: Files encrypted before this fix don't have a stored
+    #          pbkdf2_iterations value; fall back to the old
+    #          previously-hardcoded value for those.
+    iterations = payload.get("pbkdf2_iterations", 390_000)
+    key = derive_key(master_password, salt, iterations)
+    fernet = Fernet(key)
+    return fernet.decrypt(token)
+
+
 def _prompt_new_master_password() -> str:
     """
     فارسی: رمز اصلی جدید رو دوبار می‌پرسه تا از عدم اشتباه تایپی مطمئن بشه.
@@ -341,24 +387,10 @@ def secure_cookies_setup(auto: bool = False) -> Tuple[Optional[str], "c.CleanupF
 
     master_password = _prompt_new_master_password()
 
-    salt = os.urandom(16)
-    key = derive_key(master_password, salt)
-    fernet = Fernet(key)
     plain_data = c.COOKIES_DEFAULT.read_bytes()
-    token = fernet.encrypt(plain_data)
+    payload = encrypt_cookie_data(plain_data, master_password)
 
     c.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "salt": base64.b64encode(salt).decode("ascii"),
-        "data": token.decode("ascii"),
-        "imported_at": time.time(),
-        # فارسی: تعداد iteration همینجا ذخیره می‌شود تا اگر در نسخه‌های بعدی
-        #        PBKDF2_ITERATIONS تغییر کند، رمزگشایی فایل‌های قدیمی نشکند.
-        # English: The iteration count is stored here so that if
-        #          PBKDF2_ITERATIONS changes in a future version, decrypting
-        #          older files doesn't break.
-        "pbkdf2_iterations": c.PBKDF2_ITERATIONS,
-    }
     with open(c.ENCRYPTED_COOKIES_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f)
     os.chmod(c.ENCRYPTED_COOKIES_FILE, 0o600)
@@ -434,15 +466,6 @@ def resolve_cookies_path(cfg: dict) -> Tuple[Optional[str], "c.CleanupFn"]:
         try:
             with open(c.ENCRYPTED_COOKIES_FILE, "r", encoding="utf-8") as f:
                 payload = json.load(f)
-            salt = base64.b64decode(payload["salt"])
-            token = payload["data"].encode("ascii")
-            # فارسی: فایل‌های رمزنگاری‌شده‌ی قدیمی‌تر از این فیکس، مقدار
-            #        pbkdf2_iterations را ذخیره نکرده‌اند؛ برای آن‌ها از مقدار
-            #        قدیمی (که قبلاً هاردکد بود) استفاده می‌کنیم.
-            # English: Files encrypted before this fix don't have a stored
-            #          pbkdf2_iterations value; fall back to the old
-            #          previously-hardcoded value for those.
-            iterations = payload.get("pbkdf2_iterations", 390_000)
         except Exception as e:
             log_debug_traceback(traceback.format_exc())
             console.print(f"[red]Error reading the encrypted cookie file: {e}[/red]")
@@ -450,10 +473,8 @@ def resolve_cookies_path(cfg: dict) -> Tuple[Optional[str], "c.CleanupFn"]:
 
         for attempt in range(1, c.MAX_PASSWORD_ATTEMPTS + 1):
             password = getpass.getpass("Cookie master password: ")
-            key = derive_key(password, salt, iterations)
-            fernet = Fernet(key)
             try:
-                data = fernet.decrypt(token)
+                data = decrypt_cookie_payload(payload, password)
                 return _write_temp_cookie_file(data)
             except InvalidToken:
                 remaining = c.MAX_PASSWORD_ATTEMPTS - attempt

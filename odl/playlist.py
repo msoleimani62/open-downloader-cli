@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import time
-import traceback
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -25,13 +24,11 @@ from rich.progress import (
 from rich.prompt import Confirm
 from rich.table import Table
 
-from . import state
-from .downloader import build_format, human_size, resolve_video_url, ydl_opts_base
-from .errors import CLIENT_FALLBACK_RETRYABLE_CATEGORIES, classify_error
-from .logging_setup import log_debug_traceback, log_download_error, log_info, log_warning
+from .downloader import attempt_download_with_fallback, build_format, human_size, resolve_video_url
+from .logging_setup import log_download_error, log_info, log_warning
+from .models import DownloadEvent, DownloadRequest
 from .playlist_state import clear_state, load_completed_ids, mark_completed
 from .state import console
-from .constants import PLAYER_CLIENT_FALLBACK_CHAIN
 
 
 def fetch_playlist_entries(
@@ -252,57 +249,43 @@ def download_playlist(
                 out_template = str(out_path / f"{idx:03d} - %(title)s.%(ext)s")
                 short_title = (title[:35] + "...") if len(title) > 35 else title
 
-                def hook(d: dict) -> None:
-                    if d["status"] == "downloading":
-                        total = d.get("total_bytes") or d.get("total_bytes_estimate")
-                        downloaded = d.get("downloaded_bytes", 0)
-                        if total:
-                            progress.update(task_id, total=total, completed=downloaded)
-                    elif d["status"] == "finished":
+                def on_event(evt: DownloadEvent) -> None:
+                    if evt.kind == "progress":
+                        if evt.total_bytes:
+                            progress.update(task_id, total=evt.total_bytes, completed=evt.downloaded_bytes)
+                    elif evt.kind == "status":
                         progress.update(task_id, title=f"[{idx}] processing...")
+                    elif evt.kind == "retry":
+                        log_warning(f"Retrying {video_url} with player_client={evt.client}")
 
-                def attempt(current_extractor_args: dict) -> Tuple[bool, Optional[str]]:
-                    opts = ydl_opts_base(
-                        cookies_path, quality, sub_en, sub_fa, out_template, audio_only, proxy,
-                        current_extractor_args, ignore_errors=True,
-                    )
-                    opts["progress_hooks"] = [hook]
-                    try:
-                        with yt_dlp.YoutubeDL(opts) as ydl:
-                            ydl.download([video_url])
-                        return True, None
-                    except Exception as e:
-                        # فارسی: مشابه downloader.py، traceback همیشه در لاگ ذخیره می‌شود.
-                        # English: Same as downloader.py — the traceback is always
-                        #          persisted to the log file.
-                        log_debug_traceback(traceback.format_exc())
-                        if state.DEBUG:
-                            traceback.print_exc()
-                        return False, str(e)
-
-                ok, err = attempt(extractor_args)
-
-                if not ok and allow_client_fallback:
-                    category = classify_error(err or "")
-                    if category in CLIENT_FALLBACK_RETRYABLE_CATEGORIES:
-                        for client in PLAYER_CLIENT_FALLBACK_CHAIN:
-                            log_warning(f"Retrying {video_url} with player_client={client}")
-                            fallback_args = dict(extractor_args)
-                            fallback_args["youtube"] = {"player_client": [client]}
-                            ok, err = attempt(fallback_args)
-                            if ok:
-                                break
+                # فارسی: به‌جای منطق کپی‌شده‌ی attempt/fallback، حالا از همان
+                #        هسته‌ی مشترکی استفاده می‌شود که download_single هم استفاده می‌کند.
+                # English: Instead of a copy-pasted attempt/fallback loop, this now
+                #          uses the same shared core function that download_single uses.
+                request = DownloadRequest(
+                    url=video_url,
+                    out_template=out_template,
+                    cookies_path=cookies_path,
+                    quality=quality,
+                    sub_en=sub_en,
+                    sub_fa=sub_fa,
+                    audio_only=audio_only,
+                    proxy=proxy,
+                    extractor_args=extractor_args,
+                    allow_client_fallback=allow_client_fallback,
+                )
+                result = attempt_download_with_fallback(request, ignore_errors=True, on_event=on_event)
 
                 progress.update(overall_task, advance=1)
 
-                if ok:
+                if result.ok:
                     progress.update(task_id, title=f"[green]✔ [{idx}] {short_title}[/green]")
                     mark_completed(url, video_id)
                     return idx, title, True, ""
 
-                category = classify_error(err or "unknown error")
+                category = result.error_category or "unknown error"
                 progress.update(task_id, title=f"[red]✘ [{idx}] {short_title}[/red]")
-                log_download_error(video_url, f"[{category}] {err}")
+                log_download_error(video_url, f"[{category}] {result.error_message}")
                 return idx, title, False, category
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(batch)) as executor:
