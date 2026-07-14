@@ -11,6 +11,7 @@ import json
 from typing import Optional
 
 from . import constants as c
+from .logging_setup import log_warning
 
 _SETTABLE_KEYS = {
     "quality": int,
@@ -41,8 +42,12 @@ def load_config() -> dict:
             with open(c.CONFIG_FILE, "r", encoding="utf-8") as f:
                 user_cfg = json.load(f)
             defaults.update(user_cfg)
-        except Exception:
-            pass
+        except Exception as e:
+            # فارسی: به‌جای بی‌صدا نادیده گرفتن، حداقل در فایل لاگ ثبت می‌شود
+            #        که کانفیگ کاربر خراب بوده و به مقادیر پیش‌فرض برگشته‌ایم.
+            # English: Instead of silently ignoring it, at least log that the
+            #          user's config was corrupted and defaults were used.
+            log_warning(f"Config file at {c.CONFIG_FILE} could not be read ({e}); using defaults.")
     return defaults
 
 

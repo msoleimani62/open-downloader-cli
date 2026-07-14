@@ -10,10 +10,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from pathlib import Path
 from typing import Optional
 
 from . import constants as c
+
+# فارسی: قفل سراسری برای جلوگیری از race condition هنگام نوشتن هم‌زمان
+#         فایل وضعیت از چند ترد (playlist.py با ThreadPoolExecutor صدا می‌زند).
+# English: A global lock to prevent a race condition when multiple threads
+#          write the state file concurrently (called from playlist.py's
+#          ThreadPoolExecutor).
+_state_lock = threading.Lock()
 
 
 def _state_file_for(playlist_url: str) -> Path:
@@ -47,14 +55,19 @@ def mark_completed(playlist_url: str, video_id: Optional[str]) -> None:
     """
     if not video_id:
         return
-    c.PLAYLIST_STATE_DIR.mkdir(parents=True, exist_ok=True)
-    state_file = _state_file_for(playlist_url)
-    completed = load_completed_ids(playlist_url)
-    completed.add(video_id)
-    state_file.write_text(
-        json.dumps({"playlist_url": playlist_url, "completed": sorted(completed)}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    # فارسی: کل خواندن-تغییر-نوشتن باید اتمیک باشد، وگرنه دو ترد هم‌زمان
+    #        می‌توانند نسخه‌ی قدیمی را بخوانند و رکورد یکدیگر را overwrite کنند.
+    # English: The whole read-modify-write sequence must be atomic, otherwise
+    #          two threads can read a stale version and overwrite each other's record.
+    with _state_lock:
+        c.PLAYLIST_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        state_file = _state_file_for(playlist_url)
+        completed = load_completed_ids(playlist_url)
+        completed.add(video_id)
+        state_file.write_text(
+            json.dumps({"playlist_url": playlist_url, "completed": sorted(completed)}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
 
 def clear_state(playlist_url: str) -> None:

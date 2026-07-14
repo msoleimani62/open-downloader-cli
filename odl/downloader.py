@@ -25,7 +25,7 @@ from rich.progress import (
 from . import constants as c
 from . import state
 from .errors import CLIENT_FALLBACK_RETRYABLE_CATEGORIES, classify_error
-from .logging_setup import log_download_error, log_info, log_warning
+from .logging_setup import log_debug_traceback, log_download_error, log_info, log_warning
 from .state import console
 
 
@@ -215,6 +215,12 @@ def download_single(
                     ydl.download([url])
                 return True, None
             except Exception as e:
+                # فارسی: traceback همیشه (نه فقط در حالت --debug) در فایل لاگ ذخیره
+                #        می‌شود؛ چاپ روی ترمینال فقط در حالت --debug انجام می‌شود.
+                # English: The traceback is always persisted to the log file (not
+                #          only in --debug mode); printing to the terminal only
+                #          happens in --debug mode.
+                log_debug_traceback(traceback.format_exc())
                 if state.DEBUG:
                     console.print("[red]--- DEBUG: full traceback ---[/red]")
                     traceback.print_exc()

@@ -26,7 +26,9 @@ LOG_DIR: Path = CONFIG_DIR / "logs"
 PLAYLIST_STATE_DIR: Path = CONFIG_DIR / "playlist_state"
 
 BATCH_SIZE: int = 5
-PBKDF2_ITERATIONS: int = 390_000
+# فارسی: طبق توصیه‌ی فعلی OWASP برای PBKDF2-HMAC-SHA256 (حداقل ۶۰۰٬۰۰۰).
+# English: Per the current OWASP recommendation for PBKDF2-HMAC-SHA256 (minimum 600,000).
+PBKDF2_ITERATIONS: int = 600_000
 MAX_PASSWORD_ATTEMPTS: int = 3
 MAX_LOG_LINES: int = 300
 

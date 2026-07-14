@@ -190,6 +190,15 @@ def main() -> None:
         secure_cookies_setup()
         sys.exit(0)
 
+    # فارسی: چک نبود URL باید قبل از منطق کوکی باشد، وگرنه کاربری که فقط
+    #        می‌خواهد راهنما را ببیند، اول با پرامپت رمز عبور کوکی مواجه می‌شود.
+    # English: The missing-URL check must come before the cookie logic,
+    #          otherwise a user who just wants to see the help text is
+    #          first confronted with a cookie master-password prompt.
+    if not args.url:
+        build_arg_parser().print_help()
+        sys.exit(1)
+
     try_automatic_cookie_import(force=args.import_cookies)
 
     find_and_import_cookies_automatically(force=args.import_cookies)
@@ -198,10 +207,6 @@ def main() -> None:
     auto_cleanup: c.CleanupFn = lambda: None
     if c.COOKIES_DEFAULT.exists():
         auto_cookies_path, auto_cleanup = secure_cookies_setup(auto=True)
-
-    if not args.url:
-        build_arg_parser().print_help()
-        sys.exit(1)
 
     cfg = load_config()
     save_default_config()

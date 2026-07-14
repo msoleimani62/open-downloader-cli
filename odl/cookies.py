@@ -17,6 +17,7 @@ import sqlite3
 import sys
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -25,6 +26,8 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 from . import constants as c
+from . import state
+from .logging_setup import log_debug_traceback
 from .state import console
 
 try:
@@ -68,6 +71,12 @@ def _extract_via_ytdlp_browser(browser: str) -> Optional[str]:
     try:
         jar = extract_cookies_from_browser(browser)
     except Exception:
+        # فارسی: شکست در این مرحله طبیعی است (مثلاً مرورگر نصب نیست)، پس
+        #        روی ترمینال چیزی چاپ نمی‌شود؛ ولی دلیل دقیق برای دیباگ بعدی ثبت می‌شود.
+        # English: Failure here is expected (e.g. the browser isn't installed),
+        #          so nothing is printed to the terminal; but the exact reason
+        #          is still logged for later debugging.
+        log_debug_traceback(traceback.format_exc())
         return None
 
     if jar is None or len(jar) == 0:
@@ -126,6 +135,7 @@ def _extract_via_android_firefox(profile_dir: Path) -> Optional[str]:
         finally:
             conn.close()
     except Exception:
+        log_debug_traceback(traceback.format_exc())
         return None
     finally:
         tmp_copy.unlink(missing_ok=True)
@@ -236,16 +246,27 @@ def _require_crypto() -> None:
         sys.exit(1)
 
 
-def derive_key(password: str, salt: bytes) -> bytes:
+def derive_key(password: str, salt: bytes, iterations: Optional[int] = None) -> bytes:
     """
     فارسی: از رمز اصلی و یک salt، کلید رمزنگاری AES (از طریق Fernet) می‌سازه.
-    English: Derive an AES encryption key (via Fernet) from a master password and salt.
+           iterations باید همیشه با مقداری که هنگام رمزنگاری استفاده شده یکی باشد
+           (برای فایل‌های جدید از payload خوانده می‌شود، نه از ثابت سراسری).
+           اگر داده نشود، مقدار فعلی ثابت سراسری در لحظه‌ی فراخوانی خوانده می‌شود
+           (نه در لحظه‌ی import، تا از رفتار late-binding آرگومان پیش‌فرض جلوگیری شود).
+    English: Derive an AES encryption key (via Fernet) from a master password
+             and salt. iterations must always match the value used at
+             encryption time (for new files, it's read from the payload,
+             not from the global constant). If not given, the current value
+             of the global constant is read at call time (not at import
+             time, to avoid the default-argument late-binding pitfall).
     """
+    if iterations is None:
+        iterations = c.PBKDF2_ITERATIONS
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
-        iterations=c.PBKDF2_ITERATIONS,
+        iterations=iterations,
     )
     return base64.urlsafe_b64encode(kdf.derive(password.encode("utf-8")))
 
@@ -331,6 +352,12 @@ def secure_cookies_setup(auto: bool = False) -> Tuple[Optional[str], "c.CleanupF
         "salt": base64.b64encode(salt).decode("ascii"),
         "data": token.decode("ascii"),
         "imported_at": time.time(),
+        # فارسی: تعداد iteration همینجا ذخیره می‌شود تا اگر در نسخه‌های بعدی
+        #        PBKDF2_ITERATIONS تغییر کند، رمزگشایی فایل‌های قدیمی نشکند.
+        # English: The iteration count is stored here so that if
+        #          PBKDF2_ITERATIONS changes in a future version, decrypting
+        #          older files doesn't break.
+        "pbkdf2_iterations": c.PBKDF2_ITERATIONS,
     }
     with open(c.ENCRYPTED_COOKIES_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f)
@@ -409,13 +436,21 @@ def resolve_cookies_path(cfg: dict) -> Tuple[Optional[str], "c.CleanupFn"]:
                 payload = json.load(f)
             salt = base64.b64decode(payload["salt"])
             token = payload["data"].encode("ascii")
+            # فارسی: فایل‌های رمزنگاری‌شده‌ی قدیمی‌تر از این فیکس، مقدار
+            #        pbkdf2_iterations را ذخیره نکرده‌اند؛ برای آن‌ها از مقدار
+            #        قدیمی (که قبلاً هاردکد بود) استفاده می‌کنیم.
+            # English: Files encrypted before this fix don't have a stored
+            #          pbkdf2_iterations value; fall back to the old
+            #          previously-hardcoded value for those.
+            iterations = payload.get("pbkdf2_iterations", 390_000)
         except Exception as e:
+            log_debug_traceback(traceback.format_exc())
             console.print(f"[red]Error reading the encrypted cookie file: {e}[/red]")
             sys.exit(1)
 
         for attempt in range(1, c.MAX_PASSWORD_ATTEMPTS + 1):
             password = getpass.getpass("Cookie master password: ")
-            key = derive_key(password, salt)
+            key = derive_key(password, salt, iterations)
             fernet = Fernet(key)
             try:
                 data = fernet.decrypt(token)

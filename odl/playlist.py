@@ -28,7 +28,7 @@ from rich.table import Table
 from . import state
 from .downloader import build_format, human_size, resolve_video_url, ydl_opts_base
 from .errors import CLIENT_FALLBACK_RETRYABLE_CATEGORIES, classify_error
-from .logging_setup import log_download_error, log_info, log_warning
+from .logging_setup import log_debug_traceback, log_download_error, log_info, log_warning
 from .playlist_state import clear_state, load_completed_ids, mark_completed
 from .state import console
 from .constants import PLAYER_CLIENT_FALLBACK_CHAIN
@@ -272,6 +272,10 @@ def download_playlist(
                             ydl.download([video_url])
                         return True, None
                     except Exception as e:
+                        # فارسی: مشابه downloader.py، traceback همیشه در لاگ ذخیره می‌شود.
+                        # English: Same as downloader.py — the traceback is always
+                        #          persisted to the log file.
+                        log_debug_traceback(traceback.format_exc())
                         if state.DEBUG:
                             traceback.print_exc()
                         return False, str(e)
