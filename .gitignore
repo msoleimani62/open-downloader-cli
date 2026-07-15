@@ -7,3 +7,5 @@ __pycache__/
 coverage.xml
 htmlcov/
 .ruff_cache/
+dist/
+build/
