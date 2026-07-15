@@ -2,8 +2,8 @@
 
 <div align="center">
 
-**یک دانلودر یوتیوب ساده، امن و رزیوم‌پذیر برای خط فرمان**
-**A simple, secure, resumable YouTube downloader for the command line**
+**یک دانلودر ساده، امن و رزیوم‌پذیر برای خط فرمان — از هر سایتی که yt-dlp پشتیبانی می‌کنه (نه فقط یوتیوب)**
+**A simple, secure, resumable downloader for the command line — for any site yt-dlp supports (not just YouTube)**
 
 بر پایه‌ی / Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp) · دستور اجرا / Command: `odl`
 
@@ -55,13 +55,14 @@ pip install git+https://github.com/msoleimani62/open-downloader-cli.git
 
 | قابلیت | توضیح |
 |---|---|
+| 🌍 پشتیبانی از هر سایت yt-dlp | یوتیوب، ویمئو، توییتر/X، اینستاگرام، و ۱۸۰۰+ سایت دیگه — هرچی yt-dlp پشتیبانی کنه |
 | 🎬 دانلود تکی / پلی‌لیست | با نوار پیشرفت زنده و رنگی، دانلود موازی برای پلی‌لیست |
 | ⏸️ رزیوم خودکار | دانلود ناتمام (قطعی نت، خاموشی گوشی) خودکار از همون‌جا ادامه پیدا می‌کنه |
 | 🍪 دریافت خودکار کوکی | متناسب با محیط اجرا — دسکتاپ، اندروید روت‌شده، یا اندروید معمولی |
 | 🔐 رمزنگاری کوکی | AES (از طریق Fernet) + رمز اصلی که هیچ‌جا ذخیره نمی‌شه |
 | 🌐 پروکسی/Tor | پشتیبانی کامل از SOCKS5/HTTP |
 | 🧭 استخر پروکسی خودکار | تست/کش/رتست خودکار از روی لیست پروکسی خودت — برای کسایی که پروکسی بلد نیستن |
-| 🔁 Fallback هوشمند | تعویض خودکار کلاینت پخش یوتیوب هنگام تشخیص بات |
+| 🔁 Fallback هوشمند | تعویض خودکار کلاینت پخش یوتیوب هنگام تشخیص بات (مخصوص یوتیوب) |
 | 🏷️ دسته‌بندی خطا | Region Locked، Private، Bot Detection و... در خلاصه‌ی نهایی |
 | 🩺 `odl --doctor` | تشخیص کامل سلامت نصب در یک نگاه |
 | ⬆️ `odl --update` | آپدیت و بررسی نسخه‌ی yt-dlp |
@@ -247,7 +248,7 @@ MIT — فایل [LICENSE](LICENSE) رو ببین.
 
 <div align="center">
 
-**A simple, secure, resumable YouTube downloader for the command line**
+**A simple, secure, resumable downloader for the command line — for any site yt-dlp supports (not just YouTube)**
 
 Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp) · Command: `odl`
 
@@ -275,13 +276,14 @@ pip install git+https://github.com/msoleimani62/open-downloader-cli.git
 
 | Feature | Description |
 |---|---|
+| 🌍 Supports any yt-dlp site | YouTube, Vimeo, Twitter/X, Instagram, and 1800+ other sites — whatever yt-dlp supports |
 | 🎬 Single / playlist downloads | Live colored progress bars, concurrent playlist downloads |
 | ⏸️ Automatic resume | Interrupted downloads (network drops, phone reboots) continue automatically |
 | 🍪 Automatic cookie retrieval | Adapts to the environment — desktop, rooted Android, or plain Android |
 | 🔐 Cookie encryption | AES (via Fernet) + a master password that is never stored anywhere |
 | 🌐 Proxy/Tor support | Full SOCKS5/HTTP support |
 | 🧭 Automatic proxy pool | Auto test/cache/retest from your own proxy list — for people who don't know proxies |
-| 🔁 Smart fallback | Automatic YouTube playback-client switching on bot detection |
+| 🔁 Smart fallback | Automatic YouTube playback-client switching on bot detection (YouTube-only) |
 | 🏷️ Error categorization | Region Locked, Private, Bot Detection, etc. in the final summary |
 | 🩺 `odl --doctor` | Full installation health check at a glance |
 | ⬆️ `odl --update` | Update and check the yt-dlp version |

@@ -39,8 +39,18 @@ def build_format(quality: int) -> str:
 
 def is_youtube_url(url: str) -> bool:
     """
-    فارسی: بررسی سطحی می‌کنه که آیا لینک متعلق به یوتیوبه یا نه.
-    English: Loosely check whether the given URL belongs to YouTube.
+    فارسی: بررسی سطحی می‌کنه که آیا لینک متعلق به یوتیوبه یا نه. این تابع
+           دیگه برای رد کردن لینک‌های غیریوتیوب استفاده نمی‌شه (odl از هر
+           سایتی که yt-dlp پشتیبانی می‌کنه — بیش از ۱۸۰۰ تا — دانلود
+           می‌کنه)؛ فقط برای تصمیم‌گیری در مورد این‌که آیا منطق fallback
+           بین کلاینت‌های پخش یوتیوب (که مفهومی کاملاً مخصوص یوتیوبه)
+           باید فعال بشه یا نه، استفاده می‌شه.
+    English: Loosely check whether the given URL belongs to YouTube. This
+             is no longer used to reject non-YouTube links (odl downloads
+             from any site yt-dlp supports — 1800+ of them); it's only
+             used to decide whether the YouTube-specific playback-client
+             fallback logic (a concept that only makes sense for YouTube)
+             should be enabled.
     """
     return any(domain in url for domain in ("youtube.com", "youtu.be"))
 
@@ -62,22 +72,46 @@ def human_size(num_bytes: float | None) -> str:
 
 def resolve_video_url(entry: dict) -> str | None:
     """
-    فارسی: از یک entry برگشتی حالت flat-playlist، لینک کامل ویدیو رو می‌سازه.
-    English: Build a full video URL from a flat-playlist entry dict.
+    فارسی: از یک entry برگشتی حالت flat-playlist (هر سایتی که yt-dlp
+           پشتیبانی می‌کنه، نه فقط یوتیوب)، لینک کامل رو می‌سازه.
+           اولویت با webpage_url است چون تقریباً همه‌ی extractorهای
+           yt-dlp این فیلد رو با یک URL کامل و مستقیم پر می‌کنن. اگه
+           نبود، از url استفاده می‌شه (اگه خودش با http شروع بشه). فقط
+           به‌عنوان آخرین راه‌حل، اگه هیچ‌کدوم در دسترس نبود ولی id
+           داشتیم، الگوی واچ‌یوتیوب رو امتحان می‌کنیم (چون این تابع
+           اصلش فقط برای پلی‌لیست یوتیوب نوشته شده بود، برای وقتی که
+           extractor دیگه‌ای هم به‌ندرت دقیقاً همین حالت رو داشته باشه).
+    English: Build a full URL from a flat-playlist entry (any site
+             yt-dlp supports, not just YouTube). webpage_url is preferred
+             since nearly every yt-dlp extractor fills it with a direct,
+             complete URL. Falls back to url (if it already starts with
+             http). Only as a last resort, if neither is available but we
+             have an id, try the YouTube watch-URL pattern (since this
+             function was originally YouTube-playlist-only, for the rare
+             case another extractor ends up in exactly that same shape).
     """
+    webpage_url = entry.get("webpage_url")
+    if webpage_url:
+        return webpage_url
+    url = entry.get("url")
+    if url and url.startswith("http"):
+        return url
     video_id = entry.get("id")
     if video_id:
         return f"https://www.youtube.com/watch?v={video_id}"
-    url = entry.get("url")
-    if url:
-        return url if url.startswith("http") else f"https://www.youtube.com/watch?v={url}"
-    return None
+    return url or None
 
 
 def build_extractor_args(cfg: dict, bypass: bool = False) -> dict:
     """
-    فارسی: تنظیمات پیشرفته‌ی extractor_args یوتیوب را می‌سازد.
-    English: Build advanced YouTube extractor_args.
+    فارسی: تنظیمات پیشرفته‌ی extractor_args یوتیوب را می‌سازد. این مقادیر
+           فقط وقتی لینک واقعاً یوتیوب باشه توسط yt-dlp استفاده می‌شن؛
+           برای هر سایت دیگه‌ای yt-dlp خودش این کلیدها رو نادیده می‌گیره،
+           پس بی‌ضرر و بدون تأثیرن.
+    English: Build advanced YouTube extractor_args. These are only used
+             by yt-dlp when the link is actually YouTube; for any other
+             site yt-dlp simply ignores these keys, so they're harmless
+             no-ops.
     """
     args: dict = {"youtubetab": {"skip": ["authcheck"]}}
 
@@ -118,8 +152,19 @@ def ydl_opts_base(
         "format": "bestaudio/best" if audio_only else build_format(quality),
         "outtmpl": out_template,
         "continuedl": True,
-        "retries": "infinite",
-        "fragment_retries": "infinite",
+        # فارسی: "infinite" فقط وقتی از خط فرمان yt-dlp (--retries infinite)
+        #        داده بشه به float('inf') تبدیل می‌شه؛ از API پایتون که ما
+        #        استفاده می‌کنیم این تبدیل انجام نمی‌شه و رشته‌ی خام می‌مونه،
+        #        که باعث TypeError موقع مقایسه‌ی retry counter می‌شه —
+        #        دقیقاً باگی که با دانلود HLS/fragment (مثل Vimeo) آشکار شد.
+        # English: "infinite" is only converted to float('inf') when given
+        #          via yt-dlp's own CLI (--retries infinite); through the
+        #          Python API we use, that conversion never happens and
+        #          the raw string is kept, causing a TypeError when the
+        #          retry counter is compared — exactly the bug that
+        #          surfaced with HLS/fragment downloads (e.g. Vimeo).
+        "retries": float("inf"),
+        "fragment_retries": float("inf"),
         "noprogress": True,
         "quiet": True,
         "no_warnings": True,
@@ -226,7 +271,13 @@ def attempt_download_with_fallback(
     tried_clients: list = ["default"]
     ok, err = attempt(request.extractor_args)
 
-    if not ok and request.allow_client_fallback:
+    # فارسی: fallback بین کلاینت‌های پخش («android»، «web»، ...) یک مفهوم
+    #        کاملاً مخصوص یوتیوبه؛ برای هر سایت دیگه‌ای امتحانش کردن فقط
+    #        همون خطای اول رو با تأخیر بیشتر تکرار می‌کنه، بدون فایده.
+    # English: Playback-client fallback ("android", "web", ...) is a
+    #          YouTube-only concept; trying it for any other site would
+    #          just repeat the same failure with extra delay, for nothing.
+    if not ok and request.allow_client_fallback and is_youtube_url(request.url):
         category = classify_error(err or "")
         if category in CLIENT_FALLBACK_RETRYABLE_CATEGORIES:
             for client in c.PLAYER_CLIENT_FALLBACK_CHAIN:
@@ -271,10 +322,6 @@ def download_single(
              signature was deliberately kept unchanged so the call site in
              cli.py doesn't need to change.
     """
-    if not is_youtube_url(url):
-        console.print("[red]This does not look like a valid YouTube URL.[/red]")
-        return False
-
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     out_template = str(out_path / "%(title)s.%(ext)s")

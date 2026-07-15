@@ -38,9 +38,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="odl",
-        description="Open Downloader CLI (odl) — a simple, resumable YouTube downloader built on yt-dlp",
+        description="Open Downloader CLI (odl) — a simple, resumable downloader built on "
+        "yt-dlp, for any site yt-dlp supports (not just YouTube)",
     )
-    parser.add_argument("url", nargs="?", help="YouTube video or playlist URL")
+    parser.add_argument("url", nargs="?", help="video or playlist URL (any site yt-dlp supports)")
     parser.add_argument("-p", "--playlist", action="store_true", help="playlist mode")
     parser.add_argument(
         "-q",

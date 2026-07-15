@@ -204,6 +204,20 @@ class TestHelpers:
         entry = {"url": "https://youtu.be/xyz"}
         assert downloader.resolve_video_url(entry) == "https://youtu.be/xyz"
 
+    def test_resolve_video_url_prefers_webpage_url_for_non_youtube_sites(self):
+        # فارسی: خیلی از extractorهای غیریوتیوب (Vimeo، Twitter/X، ...)
+        #        webpage_url رو با لینک کامل پر می‌کنن؛ این باید همیشه
+        #        اولویت اول باشه.
+        # English: Many non-YouTube extractors (Vimeo, Twitter/X, ...)
+        #          fill webpage_url with the full link; it should always
+        #          be tried first.
+        entry = {"id": "xyz", "webpage_url": "https://vimeo.com/xyz", "url": "xyz"}
+        assert downloader.resolve_video_url(entry) == "https://vimeo.com/xyz"
+
+    def test_resolve_video_url_uses_full_url_when_no_webpage_url(self):
+        entry = {"url": "https://twitter.com/user/status/999"}
+        assert downloader.resolve_video_url(entry) == "https://twitter.com/user/status/999"
+
     def test_resolve_video_url_returns_none_when_empty(self):
         assert downloader.resolve_video_url({}) is None
 
@@ -294,6 +308,58 @@ class TestEnvironmentDetection:
         self._isolate(monkeypatch, proc_mounts="/dev/sda1 / ext4 rw,relatime 0 0\n")
         monkeypatch.setenv("ODL_FORCE_ENVIRONMENT", "not-a-real-value")
         assert cookies.detect_environment() is cookies.Environment.DESKTOP_LINUX
+
+
+class TestClientFallbackScope:
+    """
+    فارسی: fallback بین کلاینت‌های پخش («android»، «web»، ...) یک مفهوم
+           مخصوص یوتیوبه؛ این کلاس تأیید می‌کنه که برای سایت‌های دیگه
+           اصلاً امتحان نمی‌شه (فقط همون یک تلاش اول)، ولی برای یوتیوب
+           طبق معمول کامل امتحان می‌شه.
+    English: Playback-client fallback ("android", "web", ...) is a
+             YouTube-only concept; this class confirms it's never
+             attempted for other sites (just the single first try), but
+             still fully attempted for YouTube as before.
+    """
+
+    class _FailingYDL:
+        def __init__(self, opts):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def download(self, urls):
+            raise Exception("Sign in to confirm you're not a bot")
+
+    def test_fallback_skipped_for_non_youtube_urls(self, monkeypatch):
+        from odl.models import DownloadRequest
+
+        monkeypatch.setattr(downloader.yt_dlp, "YoutubeDL", self._FailingYDL)
+        request = DownloadRequest(
+            url="https://vimeo.com/12345",
+            out_template="%(title)s.%(ext)s",
+            allow_client_fallback=True,
+        )
+        result = downloader.attempt_download_with_fallback(request, ignore_errors=False)
+        assert result.ok is False
+        assert result.tried_clients == ["default"]
+
+    def test_fallback_attempted_for_youtube_urls(self, monkeypatch):
+        from odl.models import DownloadRequest
+
+        monkeypatch.setattr(downloader.yt_dlp, "YoutubeDL", self._FailingYDL)
+        request = DownloadRequest(
+            url="https://youtube.com/watch?v=abc123",
+            out_template="%(title)s.%(ext)s",
+            allow_client_fallback=True,
+        )
+        result = downloader.attempt_download_with_fallback(request, ignore_errors=False)
+        assert result.ok is False
+        assert len(result.tried_clients) > 1
 
 
 class TestPlaylistState:
@@ -419,6 +485,23 @@ class TestIgnoreErrorsBehavior:
     def test_ignore_errors_defaults_to_true_when_unspecified(self):
         opts = downloader.ydl_opts_base(None, 480, False, False, "%(title)s.%(ext)s", False, None, {})
         assert opts["ignoreerrors"] is True
+
+    def test_retries_are_numeric_not_the_string_infinite(self):
+        # فارسی: "infinite" رشته‌ای فقط از طریق CLI خود yt-dlp به
+        #        float('inf') تبدیل می‌شه؛ از API پایتون رشته‌ی خام
+        #        می‌مونه و توی دانلود fragment/HLS (مثلاً Vimeo)
+        #        TypeError می‌داد چون شمارنده‌ی retry با یه رشته
+        #        مقایسه می‌شد.
+        # English: The string "infinite" is only converted to
+        #          float('inf') via yt-dlp's own CLI; through the Python
+        #          API it stays a raw string and caused a TypeError
+        #          during fragment/HLS downloads (e.g. Vimeo) since the
+        #          retry counter was compared against a string.
+        opts = downloader.ydl_opts_base(None, 480, False, False, "%(title)s.%(ext)s", False, None, {})
+        assert opts["retries"] == float("inf")
+        assert opts["fragment_retries"] == float("inf")
+        assert isinstance(opts["retries"], float)
+        assert isinstance(opts["fragment_retries"], float)
 
 
 class TestProxyPool:

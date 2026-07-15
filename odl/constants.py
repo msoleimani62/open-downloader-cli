@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-ODL_VERSION: str = "2.2.1"
+ODL_VERSION: str = "2.3.0"
 GITHUB_REPO: str = "msoleimani62/open-downloader-cli"
 
 ALLOWED_QUALITIES: list[int] = [144, 240, 360, 480, 720, 1080, 1440, 2160]
