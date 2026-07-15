@@ -8,6 +8,7 @@
 بر پایه‌ی / Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp) · دستور اجرا / Command: `odl`
 
 [![Tests](https://github.com/msoleimani62/open-downloader-cli/actions/workflows/tests.yml/badge.svg)](https://github.com/msoleimani62/open-downloader-cli/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/open-downloader-cli)](https://pypi.org/project/open-downloader-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
 
@@ -20,11 +21,16 @@
 ## ⚡ شروع سریع
 
 ```bash
-pip install git+https://github.com/msoleimani62/open-downloader-cli.git
+pip install open-downloader-cli
 odl "لینک ویدیوی یوتیوب"
 ```
 
 همین. بار اول اگه `cookies.txt` نداشته باشی راهنمای export نشونت می‌ده؛ اگه داشته باشی خودش با رمز اصلی رمزنگاریش می‌کنه و شروع به دانلود می‌کنه.
+
+برای آخرین کد (که ممکنه از نسخه‌ی PyPI جدیدتر باشه):
+```bash
+pip install git+https://github.com/msoleimani62/open-downloader-cli.git
+```
 
 ---
 
@@ -252,11 +258,16 @@ Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp) · Command: `odl`
 ## ⚡ Quick Start
 
 ```bash
-pip install git+https://github.com/msoleimani62/open-downloader-cli.git
+pip install open-downloader-cli
 odl "YouTube video URL"
 ```
 
 That's it. On first run, if you don't have a `cookies.txt`, it shows you the export guide; if you do, it encrypts it with a master password and starts downloading.
+
+For the latest code (may be ahead of the PyPI release):
+```bash
+pip install git+https://github.com/msoleimani62/open-downloader-cli.git
+```
 
 ---
 
