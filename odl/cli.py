@@ -27,6 +27,7 @@ from .cookies import (
 from .diagnostics import run_check_self_update, run_check_update, run_doctor, run_update
 from .downloader import build_extractor_args, download_single
 from .playlist import download_playlist
+from .proxy_pool import ProxyPoolError, load_proxy_candidates, resolve_working_proxy, save_cached_proxy, test_proxy
 from .state import console
 
 
@@ -53,6 +54,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-x", "--proxy", type=str, default=None,
         help="proxy address, e.g. socks5h://127.0.0.1:9050",
+    )
+    parser.add_argument(
+        "--proxy-pool", type=str, default=None, metavar="FILE_OR_URL",
+        help="a local file or URL with one proxy per line; odl will automatically "
+             "test, cache, and rotate through them (beginners: no need to know "
+             "which proxy actually works)",
+    )
+    parser.add_argument(
+        "--proxy-pool-refresh", action="store_true",
+        help="ignore the cached proxy and re-scan the whole --proxy-pool source",
+    )
+    parser.add_argument(
+        "--test-proxies", action="store_true",
+        help="test every proxy in --proxy-pool (or the configured proxy_pool_source) "
+             "and show which ones work, without downloading anything",
     )
     parser.add_argument(
         "--player-client", type=str, default=None,
@@ -150,6 +166,81 @@ def _run_set_config(arg: str) -> None:
     console.print(f"[green]✔ {key} set to {value!r}[/green]")
 
 
+def _run_test_proxies(source: str) -> None:
+    """
+    فارسی: تمام کاندیدهای منبع پروکسی را تست می‌کند، نتیجه را در یک جدول
+           نشان می‌دهد، و اولین پروکسی سالم را کش می‌کند. دانلودی انجام
+           نمی‌شود؛ فقط برای دیدن وضعیت پروکسی‌ها قبل از یک دانلود واقعی است.
+    English: Test every candidate from the proxy source, show the results
+             in a table, and cache the first working one. No download
+             happens; this is only for checking proxy status before a real
+             download.
+    """
+    from rich.table import Table
+
+    console.print(f"[cyan]Testing proxies from: {source}[/cyan]")
+    try:
+        candidates = load_proxy_candidates(source)
+    except ProxyPoolError as e:
+        console.print(f"[red]{e}[/red]")
+        return
+
+    table = Table(title="Proxy Test Results")
+    table.add_column("#", justify="right")
+    table.add_column("Proxy")
+    table.add_column("Status", justify="center")
+    table.add_column("Latency", justify="right")
+
+    first_working: Optional[str] = None
+    for i, candidate in enumerate(candidates, start=1):
+        console.print(f"[dim]Testing {i}/{len(candidates)}: {candidate}...[/dim]")
+        result = test_proxy(candidate)
+        if result.ok:
+            latency = f"{result.latency_ms:.0f} ms" if result.latency_ms is not None else "-"
+            table.add_row(str(i), candidate, "[green]✔ works[/green]", latency)
+            if first_working is None:
+                first_working = candidate
+        else:
+            table.add_row(str(i), candidate, "[red]✘ failed[/red]", "-")
+
+    console.print(table)
+
+    if first_working:
+        save_cached_proxy(source, first_working)
+        console.print(f"[green]✔ Cached working proxy for next time: {first_working}[/green]")
+    else:
+        console.print("[red]None of the proxies worked.[/red]")
+
+
+def _resolve_proxy_via_pool(source: str, force_refresh: bool) -> Optional[str]:
+    """
+    فارسی: پروکسی سالم را از استخر می‌گیرد و پیشرفت تست را روی ترمینال
+           نشان می‌دهد. اگر منبع در دسترس نبود یا هیچ پروکسی کار نکرد،
+           فاتال نیست — بدون پروکسی ادامه داده می‌شود.
+    English: Get a working proxy from the pool and show test progress on
+             the terminal. If the source is unreachable or no proxy works,
+             it's not fatal — continues without a proxy.
+    """
+
+    def on_event(i: int, total: int, result) -> None:
+        if i == 0:
+            status = "[green]✔ still works[/green]" if result.ok else "[yellow]✘ dead now[/yellow]"
+            console.print(f"[dim]Re-checking cached proxy {result.proxy}: {status}[/dim]")
+        else:
+            status = "[green]✔[/green]" if result.ok else "[red]✘[/red]"
+            console.print(f"[dim]{status} proxy {i}/{total}: {result.proxy}[/dim]")
+
+    try:
+        proxy = resolve_working_proxy(source, force_refresh=force_refresh, on_event=on_event)
+    except ProxyPoolError as e:
+        console.print(f"[red]Proxy pool error: {e}[/red]")
+        return None
+
+    if proxy is None:
+        console.print("[yellow]No working proxy found in the pool; continuing without a proxy.[/yellow]")
+    return proxy
+
+
 def main() -> None:
     args = build_arg_parser().parse_args()
     state.set_debug(args.debug)
@@ -176,6 +267,18 @@ def main() -> None:
 
     if args.set:
         _run_set_config(args.set)
+        sys.exit(0)
+
+    if args.test_proxies:
+        cfg_for_proxy_test = load_config()
+        source = args.proxy_pool or cfg_for_proxy_test.get("proxy_pool_source")
+        if not source:
+            console.print(
+                "[red]No proxy pool source given. Use --proxy-pool <file_or_url>, "
+                "or set a default with 'odl --set proxy_pool_source=<file_or_url>'.[/red]"
+            )
+            sys.exit(1)
+        _run_test_proxies(source)
         sys.exit(0)
 
     if args.cookie_status:
@@ -211,15 +314,37 @@ def main() -> None:
     cfg = load_config()
     save_default_config()
 
-    quality = args.quality if args.quality else cfg.get("quality", c.DEFAULT_QUALITY)
+    quality = args.quality if args.quality is not None else cfg.get("quality", c.DEFAULT_QUALITY)
     if quality not in c.ALLOWED_QUALITIES:
         console.print(f"[red]Quality {quality} is not valid.[/red]")
         console.print(f"Allowed qualities: {', '.join(map(str, c.ALLOWED_QUALITIES))}")
         sys.exit(1)
 
     out_dir = args.output if args.output else cfg.get("download_dir", str(c.DOWNLOAD_DIR_DEFAULT))
-    batch_size = args.batch if args.batch else cfg.get("batch_size", c.BATCH_SIZE)
-    proxy = args.proxy if args.proxy else cfg.get("proxy")
+    batch_size = args.batch if args.batch is not None else cfg.get("batch_size", c.BATCH_SIZE)
+    # فارسی: این چک صرفاً برای --set نیست؛ فایل کانفیگ ممکن است دستی
+    #        ویرایش شده باشد، پس باید همینجا هم دوباره اعتبارسنجی شود
+    #        وگرنه playlist.py با batch_size<=0 کرش می‌کند.
+    # English: This check is not only for --set; the config file may have
+    #          been hand-edited, so it must be re-validated here as well,
+    #          otherwise playlist.py crashes with batch_size<=0.
+    if batch_size < 1:
+        console.print(f"[red]batch_size must be 1 or greater, got {batch_size}.[/red]")
+        sys.exit(1)
+
+    # فارسی: اولویت پروکسی: (۱) --proxy صریح همیشه برنده است، (۲) اگر
+    #        استخر پروکسی تنظیم شده، پروکسی سالم را خودکار پیدا می‌کند،
+    #        (۳) در غیر این صورت پروکسی ثابتِ کانفیگ (اگر باشد).
+    # English: Proxy priority: (1) an explicit --proxy always wins, (2) if
+    #          a proxy pool is configured, automatically find a working
+    #          proxy, (3) otherwise the static config proxy (if any).
+    proxy_pool_source = args.proxy_pool or cfg.get("proxy_pool_source")
+    if args.proxy:
+        proxy = args.proxy
+    elif proxy_pool_source:
+        proxy = _resolve_proxy_via_pool(proxy_pool_source, args.proxy_pool_refresh)
+    else:
+        proxy = cfg.get("proxy")
 
     allow_client_fallback = not bool(args.player_client)
 
@@ -265,7 +390,6 @@ def main() -> None:
             )
     except KeyboardInterrupt:
         console.print("\n[yellow]Stopped. Run the same command again to resume automatically.[/yellow]")
-        cleanup_cookies()
         sys.exit(130)
     finally:
         cleanup_cookies()

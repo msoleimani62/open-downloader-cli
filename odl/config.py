@@ -18,6 +18,7 @@ _SETTABLE_KEYS = {
     "download_dir": str,
     "batch_size": int,
     "proxy": str,
+    "proxy_pool_source": str,
     "player_client": str,
     "bypass": bool,
 }
@@ -34,6 +35,7 @@ def load_config() -> dict:
         "download_dir": str(c.DOWNLOAD_DIR_DEFAULT),
         "batch_size": c.BATCH_SIZE,
         "proxy": None,
+        "proxy_pool_source": None,
         "player_client": None,
         "bypass": False,
     }
@@ -66,6 +68,7 @@ def save_default_config() -> None:
                     "download_dir": str(c.DOWNLOAD_DIR_DEFAULT),
                     "batch_size": c.BATCH_SIZE,
                     "proxy": None,
+                    "proxy_pool_source": None,
                     "player_client": None,
                     "bypass": False,
                 },
@@ -120,8 +123,14 @@ def parse_set_argument(arg: str) -> tuple[str, object]:
 
     if value_type is int:
         try:
-            return key, int(raw_value)
+            int_value = int(raw_value)
         except ValueError:
             raise ValueError(f"'{key}' expects an integer, got '{raw_value}'")
+        if key == "batch_size" and int_value < 1:
+            raise ValueError(f"'batch_size' must be 1 or greater, got {int_value}")
+        if key == "quality" and int_value not in c.ALLOWED_QUALITIES:
+            allowed = ", ".join(map(str, c.ALLOWED_QUALITIES))
+            raise ValueError(f"'quality' must be one of: {allowed}")
+        return key, int_value
 
     return key, raw_value

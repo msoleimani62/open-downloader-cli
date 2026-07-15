@@ -20,6 +20,7 @@ from odl import cookies
 from odl import downloader
 from odl import config as config_module
 from odl import playlist_state
+from odl import proxy_pool
 from odl.diagnostics import _parse_version_tuple
 from odl.errors import ErrorCategory, CLIENT_FALLBACK_RETRYABLE_CATEGORIES, classify_error
 
@@ -34,6 +35,7 @@ def isolated_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(c, "LOG_FILE", tmp_path / ".config" / "opendl" / "opendl.log")
     monkeypatch.setattr(c, "LOG_DIR", tmp_path / ".config" / "opendl" / "logs")
     monkeypatch.setattr(c, "PLAYLIST_STATE_DIR", tmp_path / ".config" / "opendl" / "playlist_state")
+    monkeypatch.setattr(c, "PROXY_STATE_FILE", tmp_path / ".config" / "opendl" / "proxy_state.json")
     yield
 
 
@@ -204,18 +206,84 @@ class TestHelpers:
 
 
 class TestEnvironmentDetection:
-    def test_desktop_linux_true_without_android_markers(self, monkeypatch):
+    def _isolate(self, monkeypatch, proc_version="", proc_mounts="", os_release="", android_env_visible=False):
+        """
+        فارسی: هر سه منبع سیگنالی که detect_environment می‌خواند را با
+               مقادیر ساختگی جایگزین می‌کند — چون این تست‌ها ممکن است
+               واقعاً روی گوشی کاربر (که /proc/mounts واقعی‌اش نشونه‌های
+               کرنل اندروید دارد) اجرا شوند، بدون این ایزوله‌سازی کامل،
+               محیط واقعی روی نتیجه‌ی تست اثر می‌گذاشت.
+        English: Replace all three signal sources detect_environment reads
+                 with fake values — since these tests may actually run on
+                 the user's phone (whose real /proc/mounts has Android
+                 kernel signals), without this full isolation the real
+                 environment would leak into the test result.
+        """
         monkeypatch.setattr(c, "ANDROID_MARKER_PATHS", [Path("/nonexistent-marker-path")])
         for var in c.ANDROID_MARKER_ENV_VARS:
             monkeypatch.delenv(var, raising=False)
+        if android_env_visible:
+            monkeypatch.setenv("TERMUX_VERSION", "0.118")
+        monkeypatch.delenv("ODL_FORCE_ENVIRONMENT", raising=False)
         monkeypatch.setattr(cookies.sys, "platform", "linux")
+
+        fake_files = {"/proc/version": proc_version, "/proc/mounts": proc_mounts, "/etc/os-release": os_release}
+        monkeypatch.setattr(cookies, "_read_text_safely", lambda path: fake_files.get(str(path), ""))
+
+    def test_desktop_linux_true_without_android_markers(self, monkeypatch):
+        self._isolate(monkeypatch, proc_mounts="/dev/sda1 / ext4 rw,relatime 0 0\n")
         assert cookies.is_desktop_linux() is True
+        assert cookies.detect_environment() is cookies.Environment.DESKTOP_LINUX
 
     def test_desktop_linux_false_with_termux_env_var(self, monkeypatch):
-        monkeypatch.setattr(c, "ANDROID_MARKER_PATHS", [Path("/nonexistent-marker-path")])
-        monkeypatch.setenv("TERMUX_VERSION", "0.118")
-        monkeypatch.setattr(cookies.sys, "platform", "linux")
+        self._isolate(monkeypatch, android_env_visible=True)
         assert cookies.is_desktop_linux() is False
+        assert cookies.detect_environment() is cookies.Environment.ANDROID_TERMUX
+
+    def test_kali_nethunter_detected_via_android_kernel_mounts_and_os_release(self, monkeypatch):
+        # فارسی: دقیقاً همون سیگنال‌هایی که روی گوشی واقعی کاربر مشاهده
+        #        شد: binder/schedtune در mounts + ID=kali در os-release.
+        # English: Exactly the signals observed on the user's real phone:
+        #          binder/schedtune in mounts + ID=kali in os-release.
+        self._isolate(
+            monkeypatch,
+            proc_mounts=(
+                "binder /dev/binderfs binder rw,relatime 0 0\n"
+                "none /dev/stune cgroup rw,nosuid,nodev,noexec,relatime,schedtune 0 0\n"
+            ),
+            os_release='PRETTY_NAME="Kali GNU/Linux Rolling"\nID=kali\nID_LIKE=debian\n',
+        )
+        assert cookies.detect_environment() is cookies.Environment.KALI_NETHUNTER
+        assert cookies.is_desktop_linux() is False
+
+    def test_android_kernel_chroot_with_non_kali_distro_falls_back_to_android_termux(self, monkeypatch):
+        self._isolate(
+            monkeypatch,
+            proc_mounts="binder /dev/binderfs binder rw,relatime 0 0\n",
+            os_release='PRETTY_NAME="Ubuntu"\nID=ubuntu\n',
+        )
+        assert cookies.detect_environment() is cookies.Environment.ANDROID_TERMUX
+
+    def test_wsl_detected_via_proc_version(self, monkeypatch):
+        self._isolate(monkeypatch, proc_version="Linux version 5.15.0 (Microsoft@Microsoft.com)\n")
+        assert cookies.detect_environment() is cookies.Environment.WSL
+
+    def test_non_linux_platform_is_other(self, monkeypatch):
+        monkeypatch.delenv("ODL_FORCE_ENVIRONMENT", raising=False)
+        monkeypatch.setattr(cookies.sys, "platform", "darwin")
+        assert cookies.detect_environment() is cookies.Environment.OTHER
+
+    def test_force_environment_override_wins(self, monkeypatch):
+        monkeypatch.setenv("ODL_FORCE_ENVIRONMENT", "kali_nethunter")
+        monkeypatch.setattr(cookies.sys, "platform", "linux")
+        assert cookies.detect_environment() is cookies.Environment.KALI_NETHUNTER
+
+    def test_invalid_force_environment_falls_back_to_auto_detect(self, monkeypatch):
+        self._isolate(monkeypatch, proc_mounts="/dev/sda1 / ext4 rw,relatime 0 0\n")
+        monkeypatch.setenv("ODL_FORCE_ENVIRONMENT", "not-a-real-value")
+        assert cookies.detect_environment() is cookies.Environment.DESKTOP_LINUX
+
+
 class TestPlaylistState:
     def test_no_state_returns_empty_set(self):
         assert playlist_state.load_completed_ids("https://youtube.com/playlist?list=A") == set()
@@ -287,6 +355,27 @@ class TestConfigSetParsing:
         reloaded = config_module.load_config()
         assert reloaded["quality"] == 1080
 
+    def test_batch_size_zero_raises(self):
+        # فارسی: بدون این چک، playlist.py با batch_size=0 روی
+        #        range(0, n, 0) کرش می‌کند (ValueError).
+        # English: Without this check, playlist.py crashes on
+        #          range(0, n, 0) (ValueError) when batch_size=0.
+        with pytest.raises(ValueError):
+            config_module.parse_set_argument("batch_size=0")
+
+    def test_batch_size_negative_raises(self):
+        with pytest.raises(ValueError):
+            config_module.parse_set_argument("batch_size=-3")
+
+    def test_batch_size_positive_is_accepted(self):
+        key, value = config_module.parse_set_argument("batch_size=3")
+        assert key == "batch_size"
+        assert value == 3
+
+    def test_quality_not_in_allowed_list_raises(self):
+        with pytest.raises(ValueError):
+            config_module.parse_set_argument("quality=999")
+
 
 class TestSelfUpdateVersionCompare:
     def test_simple_versions(self):
@@ -320,3 +409,107 @@ class TestIgnoreErrorsBehavior:
             None, 480, False, False, "%(title)s.%(ext)s", False, None, {}
         )
         assert opts["ignoreerrors"] is True
+
+
+class TestProxyPool:
+    def test_normalize_proxy_adds_http_scheme_when_missing(self):
+        assert proxy_pool._normalize_proxy("1.2.3.4:8080") == "http://1.2.3.4:8080"
+
+    def test_normalize_proxy_keeps_existing_scheme(self):
+        assert proxy_pool._normalize_proxy("socks5://1.2.3.4:1080") == "socks5://1.2.3.4:1080"
+
+    def test_load_candidates_from_file_skips_comments_and_blanks(self, tmp_path):
+        source_file = tmp_path / "proxies.txt"
+        source_file.write_text(
+            "# a comment\n\n1.2.3.4:8080\nsocks5://5.6.7.8:1080\n\n# another\n1.2.3.4:8080\n",
+            encoding="utf-8",
+        )
+        candidates = proxy_pool.load_proxy_candidates(str(source_file))
+        assert candidates == ["http://1.2.3.4:8080", "socks5://5.6.7.8:1080"]
+
+    def test_load_candidates_missing_file_raises_pool_error(self, tmp_path):
+        with pytest.raises(proxy_pool.ProxyPoolError):
+            proxy_pool.load_proxy_candidates(str(tmp_path / "does-not-exist.txt"))
+
+    def test_load_candidates_empty_file_raises_pool_error(self, tmp_path):
+        empty_file = tmp_path / "empty.txt"
+        empty_file.write_text("# nothing but comments\n", encoding="utf-8")
+        with pytest.raises(proxy_pool.ProxyPoolError):
+            proxy_pool.load_proxy_candidates(str(empty_file))
+
+    def test_cache_roundtrip(self):
+        assert proxy_pool.load_cached_proxy("source-a") is None
+        proxy_pool.save_cached_proxy("source-a", "http://1.2.3.4:8080")
+        assert proxy_pool.load_cached_proxy("source-a") == "http://1.2.3.4:8080"
+
+    def test_cache_is_invalid_for_a_different_source(self):
+        proxy_pool.save_cached_proxy("source-a", "http://1.2.3.4:8080")
+        assert proxy_pool.load_cached_proxy("source-b") is None
+
+    def test_clear_cached_proxy_removes_the_cache(self):
+        proxy_pool.save_cached_proxy("source-a", "http://1.2.3.4:8080")
+        proxy_pool.clear_cached_proxy()
+        assert proxy_pool.load_cached_proxy("source-a") is None
+
+    def test_resolve_reuses_still_working_cached_proxy_without_scanning_source(self, tmp_path):
+        source_file = tmp_path / "proxies.txt"
+        source_file.write_text("http://1.1.1.1:80\nhttp://2.2.2.2:80\n", encoding="utf-8")
+        proxy_pool.save_cached_proxy(str(source_file), "http://cached.example:80")
+
+        calls = []
+
+        def always_ok_tester(proxy, cookies_path=None):
+            calls.append(proxy)
+            return downloader_test_result(proxy, ok=True)
+
+        result = proxy_pool.resolve_working_proxy(str(source_file), tester=always_ok_tester)
+        assert result == "http://cached.example:80"
+        # فارسی: چون کش هنوز سالم بود، هیچ کاندیدی از فایل منبع نباید تست شده باشد.
+        # English: Since the cache was still healthy, no candidate from the
+        #          source file should have been tested.
+        assert calls == ["http://cached.example:80"]
+
+    def test_resolve_falls_back_to_source_when_cache_is_dead(self, tmp_path):
+        source_file = tmp_path / "proxies.txt"
+        source_file.write_text("http://1.1.1.1:80\nhttp://2.2.2.2:80\n", encoding="utf-8")
+        proxy_pool.save_cached_proxy(str(source_file), "http://dead.example:80")
+
+        def tester(proxy, cookies_path=None):
+            ok = proxy == "http://2.2.2.2:80"
+            return downloader_test_result(proxy, ok=ok)
+
+        result = proxy_pool.resolve_working_proxy(str(source_file), tester=tester)
+        assert result == "http://2.2.2.2:80"
+        assert proxy_pool.load_cached_proxy(str(source_file)) == "http://2.2.2.2:80"
+
+    def test_resolve_returns_none_when_nothing_works(self, tmp_path):
+        source_file = tmp_path / "proxies.txt"
+        source_file.write_text("http://1.1.1.1:80\nhttp://2.2.2.2:80\n", encoding="utf-8")
+
+        def always_fail_tester(proxy, cookies_path=None):
+            return downloader_test_result(proxy, ok=False, error="timed out")
+
+        result = proxy_pool.resolve_working_proxy(str(source_file), tester=always_fail_tester)
+        assert result is None
+        assert proxy_pool.load_cached_proxy(str(source_file)) is None
+
+    def test_force_refresh_ignores_a_still_working_cache(self, tmp_path):
+        source_file = tmp_path / "proxies.txt"
+        source_file.write_text("http://1.1.1.1:80\n", encoding="utf-8")
+        proxy_pool.save_cached_proxy(str(source_file), "http://cached.example:80")
+
+        calls = []
+
+        def tester(proxy, cookies_path=None):
+            calls.append(proxy)
+            return downloader_test_result(proxy, ok=True)
+
+        result = proxy_pool.resolve_working_proxy(str(source_file), force_refresh=True, tester=tester)
+        assert result == "http://1.1.1.1:80"
+        assert "http://cached.example:80" not in calls
+
+
+def downloader_test_result(proxy, ok, error=None):
+    from odl.models import ProxyCheckResult
+
+    return ProxyCheckResult(proxy=proxy, ok=ok, latency_ms=12.3 if ok else None, error=error)

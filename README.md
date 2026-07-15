@@ -20,6 +20,7 @@
 - [نصب](#-نصب)
 - [دریافت کوکی — راهنمای گام‌به‌گام](#-دریافت-کوکی--راهنمای-گامبهگام)
 - [استفاده](#-استفاده)
+- [پیدا کردن خودکار پروکسی](#-پیدا-کردن-خودکار-پروکسی-برای-کسایی-که-پروکسی-بلد-نیستن)
 - [همه‌ی گزینه‌های خط فرمان](#-همهی-گزینههای-خط-فرمان)
 - [عیب‌یابی](#-عیبیابی)
 - [حذف کامل](#️-حذف-کامل)
@@ -37,6 +38,7 @@
 | 🍪 دریافت خودکار کوکی | متناسب با محیط اجرا — دسکتاپ، اندروید روت‌شده، یا اندروید معمولی |
 | 🔐 رمزنگاری کوکی | AES (از طریق Fernet) + رمز اصلی که هیچ‌جا ذخیره نمی‌شه |
 | 🌐 پروکسی/Tor | پشتیبانی کامل از SOCKS5/HTTP |
+| 🧭 استخر پروکسی خودکار | تست/کش/رتست خودکار از روی لیست پروکسی خودت — برای کسایی که پروکسی بلد نیستن |
 | 🔁 Fallback هوشمند | تعویض خودکار کلاینت پخش یوتیوب هنگام تشخیص بات |
 | 🏷️ دسته‌بندی خطا | Region Locked، Private، Bot Detection و... در خلاصه‌ی نهایی |
 | 🩺 `odl --doctor` | تشخیص کامل سلامت نصب در یک نگاه |
@@ -121,6 +123,36 @@ odl -p -q 720 "لینک پلی‌لیست"              # دانلود کل پل
 
 ---
 
+## 🌐 پیدا کردن خودکار پروکسی (برای کسایی که پروکسی بلد نیستن)
+
+اگه پروکسی سرت نمی‌شه یا نمی‌دونی کدوم پروکسی هنوز زنده‌ست، لازم نیست دستی امتحان کنی. یک فایل متنی (یا لینک یک فایل متنی) با یک پروکسی در هر خط بده، بقیه‌ش خودکاره:
+
+```bash
+# proxies.txt — هر خط یک پروکسی؛ خط خالی و خط # نادیده گرفته می‌شه
+# http://1.2.3.4:8080
+# socks5://5.6.7.8:1080
+
+odl --proxy-pool ~/proxies.txt "لینک ویدیو"
+```
+
+odl خودش یکی‌یکی پروکسی‌ها رو با یک تست واقعی (نه فقط پینگ) امتحان می‌کنه، اولین پروکسی سالم رو ذخیره می‌کنه، و دفعه‌ی بعد قبل از هر دانلود اول همون رو دوباره تست می‌کنه؛ اگه هنوز زنده بود، دیگه سراغ بقیه‌ی لیست نمی‌ره. اگه مرده بود، خودش دوباره از اول لیست می‌گرده.
+
+```bash
+# فقط تست کن ببین کدوم پروکسی‌ها الان زنده‌ن، بدون دانلود
+odl --test-proxies --proxy-pool ~/proxies.txt
+
+# اگه نمی‌خوای هر بار --proxy-pool رو تایپ کنی، یک‌بار پیش‌فرضش کن
+odl --set proxy_pool_source=~/proxies.txt
+odl "لینک ویدیو"   # از این به بعد خودکار از همین لیست استفاده می‌کنه
+
+# مجبورش کن نادیده بگیره پروکسی کش‌شده رو و کل لیست رو دوباره اسکن کنه
+odl --proxy-pool-refresh "لینک ویدیو"
+```
+
+⚠️ **نکته‌ی امنیتی مهم:** پروکسی‌های رایگان عمومی از منابع نامعتبر می‌تونن ترافیک شبکه‌ت رو ببینن یا حتی دستکاری کنن. odl فقط از منبعی استفاده می‌کنه که خودت بهش دادی — هیچ‌جا خودش دنبال پروکسی روی اینترنت نمی‌گرده. فقط از منبعی استفاده کن که بهش اعتماد داری.
+
+---
+
 ## ⚙️ همه‌ی گزینه‌های خط فرمان
 
 | گزینه | توضیح |
@@ -133,6 +165,9 @@ odl -p -q 720 "لینک پلی‌لیست"              # دانلود کل پل
 | `-o, --output` | مسیر ذخیره‌سازی سفارشی |
 | `-b, --batch` | تعداد دانلود هم‌زمان در پلی‌لیست |
 | `-x, --proxy` | آدرس پروکسی، مثلاً `socks5h://127.0.0.1:9050` |
+| `--proxy-pool` | فایل/لینک لیست پروکسی؛ تست و کش و چرخش خودکار |
+| `--proxy-pool-refresh` | نادیده گرفتن کش و اسکن کامل دوباره‌ی لیست پروکسی |
+| `--test-proxies` | فقط تست کن کدوم پروکسی‌ها زنده‌ن، بدون دانلود |
 | `--player-client` | اجبار کلاینت پخش خاص (مثلاً `android`) |
 | `--bypass` | استخراج سبک‌تر/سریع‌تر |
 | `--secure-cookies` | رمزنگاری دستی کوکی فعلی |
@@ -153,8 +188,10 @@ odl -p -q 720 "لینک پلی‌لیست"              # دانلود کل پل
 | مشکل | راه‌حل |
 |---|---|
 | `Sign in to confirm you're not a bot` | کوکی معتبر نیست/منقضی شده → `odl --import-cookies` |
-| خطای Region/جغرافیایی | از `-x` با یه پروکسی/Tor در کشور مجاز استفاده کن |
+| خطای Region/جغرافیایی | از `-x` یا `--proxy-pool` با یه پروکسی/Tor در کشور مجاز استفاده کن |
 | رمز اصلی یادت رفته | `odl --reset-cookies` و export مجدد |
+| نمی‌دونی کدوم پروکسی زنده‌ست | `odl --test-proxies --proxy-pool ~/proxies.txt` |
+| تشخیص محیط (`odl --doctor`) اشتباهه | `ODL_FORCE_ENVIRONMENT=kali_nethunter odl --doctor` (مقادیر مجاز: `android_termux`، `kali_nethunter`، `desktop_linux`، `wsl`، `other`) |
 | نمی‌دونی مشکل از کجاست | `odl --doctor` و `odl --debug "لینک"` |
 
 ---
@@ -205,6 +242,7 @@ Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp) · Command: `odl`
 | 🍪 Automatic cookie retrieval | Adapts to the environment — desktop, rooted Android, or plain Android |
 | 🔐 Cookie encryption | AES (via Fernet) + a master password that is never stored anywhere |
 | 🌐 Proxy/Tor support | Full SOCKS5/HTTP support |
+| 🧭 Automatic proxy pool | Auto test/cache/retest from your own proxy list — for people who don't know proxies |
 | 🔁 Smart fallback | Automatic YouTube playback-client switching on bot detection |
 | 🏷️ Error categorization | Region Locked, Private, Bot Detection, etc. in the final summary |
 | 🩺 `odl --doctor` | Full installation health check at a glance |
@@ -287,6 +325,36 @@ odl -p -q 720 "playlist URL"    # download an entire playlist
 
 ---
 
+## 🌐 Automatic Proxy Discovery (for people who don't know proxies)
+
+If you don't understand proxies or don't know which one is still alive, you don't have to test them by hand. Give odl a text file (or a URL to one) with one proxy per line, and it handles the rest:
+
+```bash
+# proxies.txt — one proxy per line; blank lines and # lines are ignored
+# http://1.2.3.4:8080
+# socks5://5.6.7.8:1080
+
+odl --proxy-pool ~/proxies.txt "video URL"
+```
+
+odl tests each proxy with a real check (not just a ping), caches the first working one, and before every later download re-tests that same cached proxy first; if it's still alive, it skips the rest of the list entirely. If it died, it automatically scans the list again from the top.
+
+```bash
+# just check which proxies are alive right now, without downloading
+odl --test-proxies --proxy-pool ~/proxies.txt
+
+# set a default so you don't have to type --proxy-pool every time
+odl --set proxy_pool_source=~/proxies.txt
+odl "video URL"   # automatically uses that list from now on
+
+# force it to ignore the cached proxy and re-scan the whole list
+odl --proxy-pool-refresh "video URL"
+```
+
+⚠️ **Security note:** proxies from untrusted public sources can see, or even tamper with, your network traffic. odl only ever uses the source *you* give it — it never searches the internet for proxies on its own. Only point it at a source you trust.
+
+---
+
 ## ⚙️ All CLI Options
 
 | Option | Description |
@@ -299,6 +367,9 @@ odl -p -q 720 "playlist URL"    # download an entire playlist
 | `-o, --output` | custom output directory |
 | `-b, --batch` | concurrent downloads in playlist mode |
 | `-x, --proxy` | proxy address, e.g. `socks5h://127.0.0.1:9050` |
+| `--proxy-pool` | proxy list file/URL; automatic test, cache, and rotation |
+| `--proxy-pool-refresh` | ignore the cache and re-scan the whole proxy list |
+| `--test-proxies` | just check which proxies are alive, without downloading |
 | `--player-client` | force a specific playback client (e.g. `android`) |
 | `--bypass` | lighter/faster extraction |
 | `--secure-cookies` | manually encrypt the current cookie file |
@@ -319,8 +390,10 @@ odl -p -q 720 "playlist URL"    # download an entire playlist
 | Problem | Solution |
 |---|---|
 | `Sign in to confirm you're not a bot` | Cookie invalid/expired → `odl --import-cookies` |
-| Region/geo error | Use `-x` with a proxy/Tor exit in an allowed country |
+| Region/geo error | Use `-x` or `--proxy-pool` with a proxy/Tor exit in an allowed country |
 | Forgot master password | `odl --reset-cookies` and re-export |
+| Not sure which proxy is alive | `odl --test-proxies --proxy-pool ~/proxies.txt` |
+| Environment detection (`odl --doctor`) is wrong | `ODL_FORCE_ENVIRONMENT=kali_nethunter odl --doctor` (allowed values: `android_termux`, `kali_nethunter`, `desktop_linux`, `wsl`, `other`) |
 | Not sure what's wrong | `odl --doctor` and `odl --debug "URL"` |
 
 ---

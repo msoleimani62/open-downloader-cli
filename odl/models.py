@@ -70,3 +70,25 @@ class DownloadResult:
 # فارسی: امضای تابع callback که رویدادهای دانلود را دریافت می‌کند.
 # English: The signature of the callback function that receives download events.
 DownloadEventCallback = Callable[[DownloadEvent], None]
+
+
+@dataclass
+class ProxyCheckResult:
+    """
+    فارسی: نتیجه‌ی یک تست سلامت واقعی روی یک پروکسی (نه فقط اتصال شبکه،
+           بلکه تست واقعی extract_info روی یک ویدیوی یوتیوب).
+    English: The result of a real health check against a proxy (not just a
+             network connection, but an actual yt-dlp extract_info test
+             against a YouTube video).
+    """
+
+    proxy: str
+    ok: bool
+    latency_ms: Optional[float] = None
+    error: Optional[str] = None
+
+
+# فارسی: امضای تابع callback که پیشرفت تست هر کاندید پروکسی را گزارش می‌کند.
+# English: The signature of the callback function reporting each proxy
+#          candidate's test progress.
+ProxyTestEventCallback = Callable[[int, int, ProxyCheckResult], None]

@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 import traceback
+from enum import Enum
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -40,20 +41,140 @@ except ImportError:
     CRYPTO_AVAILABLE = False
 
 
+class Environment(Enum):
+    """
+    فارسی: محیط اجرای واقعی odl. برخلاف یک بولی ساده (دسکتاپ/غیردسکتاپ)،
+           این enum بین چند محیط لینوکسی متفاوت که هرکدام رفتار متفاوتی
+           برای دسترسی به کوکی/فایل‌سیستم دارند تمایز قائل می‌شود.
+    English: The actual environment odl is running in. Unlike a simple
+             boolean (desktop/not-desktop), this enum distinguishes
+             between several Linux-family environments that each need
+             different cookie/filesystem access behavior.
+    """
+
+    ANDROID_TERMUX = "Android/Termux"
+    KALI_NETHUNTER = "Kali NetHunter (Termux/proot)"
+    DESKTOP_LINUX = "Desktop Linux"
+    WSL = "WSL (Windows Subsystem for Linux)"
+    OTHER = "Other/Unrecognized"
+
+
+def _read_text_safely(path: Path) -> str:
+    """
+    فارسی: محتوای یک فایل را می‌خواند و در هر نوع خطا (شامل PermissionError
+           — که خودش می‌تواند یک نشونه باشد، نه فقط یک خطای بی‌ربط) رشته‌ی
+           خالی برمی‌گرداند.
+    English: Read a file's content, returning an empty string on any error
+             (including PermissionError — which can itself be a signal,
+             not just an unrelated failure).
+    """
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def _looks_like_android_kernel() -> bool:
+    """
+    فارسی: از داخل یک chroot/proot (مثل Kali NetHunter)، نشونه‌های معمول
+           اندروید (مسیرها، متغیرهای محیطی) دیده نمی‌شوند چون متعلق به
+           بیرون chroot‌اند. ولی زیرسیستم‌های کرنلی مخصوص اندروید — binder،
+           cpuset، schedtune، یا mount option سراسری seclabel (SELinux
+           اندروید) — همیشه در /proc/mounts دیده می‌شوند، چون کرنل زیرِ
+           chroot هم همان کرنل هاست است. این نشونه‌ها با تست دستی روی یک
+           نصب واقعی Kali NetHunter تأیید شده‌اند.
+    English: From inside a chroot/proot (e.g. Kali NetHunter), the usual
+             Android markers (paths, env vars) aren't visible since they
+             belong outside the chroot. But Android-specific kernel
+             subsystems — binder, cpuset, schedtune, or the seclabel mount
+             option (Android's SELinux) — always show up in /proc/mounts,
+             since the kernel underneath the chroot is still the host's.
+             These signals were confirmed by hand on a real Kali NetHunter
+             install.
+    """
+    mounts = _read_text_safely(Path("/proc/mounts"))
+    return any(signal in mounts for signal in c.ANDROID_KERNEL_MOUNT_SIGNALS)
+
+
+def _chroot_distro_id() -> Optional[str]:
+    """
+    فارسی: شناسه‌ی توزیع (ID در /etc/os-release) داخل chroot فعلی را
+           برمی‌گرداند، مثلاً «kali». اگر پیدا نشد None برمی‌گردد.
+    English: Return the distro ID (ID in /etc/os-release) inside the
+             current chroot, e.g. "kali". Returns None if not found.
+    """
+    for line in _read_text_safely(Path("/etc/os-release")).splitlines():
+        if line.startswith("ID="):
+            return line.split("=", 1)[1].strip().strip('"').lower()
+    return None
+
+
+def detect_environment() -> Environment:
+    """
+    فارسی:
+        محیط واقعی اجرا را تشخیص می‌دهد. ترتیب بررسی:
+        ۱. override دستی با متغیر محیطی ODL_FORCE_ENVIRONMENT (برای
+           مواقعی که تشخیص خودکار اشتباه رفت).
+        ۲. WSL: از روی محتوای /proc/version.
+        ۳. Android/Termux واقعی (نه chroot): نشانه‌های اندروید مستقیماً
+           دیده می‌شوند.
+        ۴. Kali NetHunter روی Termux/proot: نشانه‌های اندروید مستقیم دیده
+           نمی‌شوند (چون داخل chroot هستیم) ولی زیرسیستم‌های کرنلی
+           مخصوص اندروید در /proc/mounts دیده می‌شوند؛ اگر توزیع chroot
+           هم «kali» باشد، دقیقاً Kali NetHunter است.
+        ۵. در غیر این صورت: Desktop Linux معمولی.
+    English:
+        Detect the actual runtime environment. Check order:
+        1. Manual override via the ODL_FORCE_ENVIRONMENT env var (for
+           cases where auto-detection gets it wrong).
+        2. WSL: from the contents of /proc/version.
+        3. Genuine Android/Termux (not chrooted): Android markers are
+           directly visible.
+        4. Kali NetHunter on Termux/proot: direct Android markers aren't
+           visible (since we're inside the chroot) but Android-specific
+           kernel subsystems show up in /proc/mounts; if the chroot's
+           distro is also "kali", it's specifically Kali NetHunter.
+        5. Otherwise: a regular Desktop Linux.
+    """
+    override = os.environ.get("ODL_FORCE_ENVIRONMENT", "").strip().upper()
+    if override:
+        try:
+            return Environment[override]
+        except KeyError:
+            pass  # فارسی: مقدار نامعتبر بود؛ به تشخیص خودکار برمی‌گردیم
+            # English: invalid value; fall through to auto-detection
+
+    if not sys.platform.startswith("linux"):
+        return Environment.OTHER
+
+    proc_version = _read_text_safely(Path("/proc/version")).lower()
+    if "microsoft" in proc_version:
+        return Environment.WSL
+
+    android_markers_visible = any(path.exists() for path in c.ANDROID_MARKER_PATHS) or any(
+        os.environ.get(var) for var in c.ANDROID_MARKER_ENV_VARS
+    )
+    if android_markers_visible:
+        return Environment.ANDROID_TERMUX
+
+    if _looks_like_android_kernel():
+        return Environment.KALI_NETHUNTER if _chroot_distro_id() == "kali" else Environment.ANDROID_TERMUX
+
+    return Environment.DESKTOP_LINUX
+
+
 def is_desktop_linux() -> bool:
     """
-    فارسی: تشخیص می‌ده که آیا روی یک لینوکس دسکتاپ/سرور معمولی اجرا می‌شیم
-           (نه اندروید/Termux)، تا بشه از دسترسی مستقیم به مرورگر استفاده کرد.
-    English: Detect whether we're on a regular desktop/server Linux (not
-             Android/Termux), so we can use direct browser-profile access.
+    فارسی: نسخه‌ی بولیِ سازگار با نسخه‌ی قبلی، بر پایه‌ی detect_environment.
+           فقط برای عادی‌ترین شاخه‌بندی رفتاری (دسکتاپ در برابر بقیه) نگه
+           داشته شده؛ برای نمایش/گزارش از detect_environment() مستقیم
+           استفاده کنید.
+    English: Backward-compatible boolean wrapper around detect_environment,
+             kept only for the simplest behavioral branching (desktop vs.
+             everything else). For display/reporting, use
+             detect_environment() directly.
     """
-    if not sys.platform.startswith("linux"):
-        return False
-    if any(path.exists() for path in c.ANDROID_MARKER_PATHS):
-        return False
-    if any(os.environ.get(var) for var in c.ANDROID_MARKER_ENV_VARS):
-        return False
-    return True
+    return detect_environment() is Environment.DESKTOP_LINUX
 
 
 def _extract_via_ytdlp_browser(browser: str) -> Optional[str]:

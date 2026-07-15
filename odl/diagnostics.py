@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from . import constants as c
-from .cookies import CRYPTO_AVAILABLE, is_desktop_linux
+from .cookies import CRYPTO_AVAILABLE, detect_environment
 from .state import console
 
 
@@ -139,12 +139,29 @@ def run_doctor() -> None:
     elif c.COOKIES_DEFAULT.exists():
         table.add_row("[bold]Cookies[/bold]", "[yellow]plaintext file present (will be encrypted on next run)[/yellow]")
     else:
-        table.add_row("[bold]Cookies[/bold]", "[red]none found[/red]")
+        # فارسی: قبلاً اینجا فقط ~/cookies.txt چک می‌شد؛ اگر کاربر فایل
+        #        export‌شده را در مسیرهای معمول (مثل Download گوشی) گذاشته
+        #        بود ولی هنوز import نشده بود (چون --doctor زودتر از منطق
+        #        import خودکار خارج می‌شود)، پیام گمراه‌کننده‌ی «پیدا نشد»
+        #        نمایش داده می‌شد.
+        # English: This used to only check ~/cookies.txt; if the user had
+        #          placed an exported file in a common location (like the
+        #          phone's Download folder) but it hadn't been imported yet
+        #          (since --doctor exits before the auto-import logic
+        #          runs), it showed a misleading "not found" message.
+        found_path = next((p for p in c.COOKIE_SEARCH_PATHS if p.exists() and p.is_file()), None)
+        if found_path:
+            table.add_row(
+                "[bold]Cookies[/bold]",
+                f"[yellow]found at {found_path}, not imported yet — run 'odl <url>' once to import it[/yellow]",
+            )
+        else:
+            table.add_row("[bold]Cookies[/bold]", "[red]none found[/red]")
 
     table.add_row(
         "[bold]Config directory[/bold]",
         f"{c.CONFIG_DIR} ({'writable' if os.access(c.CONFIG_DIR.parent, os.W_OK) else 'NOT writable'})",
     )
-    table.add_row("[bold]Environment[/bold]", "Desktop Linux" if is_desktop_linux() else "Android/Termux")
+    table.add_row("[bold]Environment[/bold]", detect_environment().value)
 
     console.print(Panel(table, border_style="cyan"))
