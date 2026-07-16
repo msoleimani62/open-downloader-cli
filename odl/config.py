@@ -8,6 +8,7 @@ English: Reading/writing the user config file, and helper functions for
 from __future__ import annotations
 
 import json
+import os
 
 from . import constants as c
 from .logging_setup import log_warning
@@ -52,12 +53,27 @@ def load_config() -> dict:
     return defaults
 
 
+def _ensure_secure_config_dir() -> None:
+    """
+    فارسی: پوشه‌ی کانفیگ رو می‌سازه (اگه نبود) و دسترسیش رو محدود می‌کنه
+           (700 — فقط خود کاربر). config.json رمزنگاری‌شده نیست (برخلاف
+           کوکی) و می‌تونه آدرس پروکسی یا مسیرها رو نگه داره؛ روی
+           دستگاه‌های اشتراکی این تنها لایه‌ی محافظتشه.
+    English: Create the config directory (if missing) and restrict its
+             permissions (700 — owner only). config.json isn't encrypted
+             (unlike the cookie file) and can hold a proxy address or
+             paths; on a shared device this is its only protection.
+    """
+    c.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(c.CONFIG_DIR, 0o700)
+
+
 def save_default_config() -> None:
     """
     فارسی: اگه فایل کانفیگ وجود نداشت، یک نسخه‌ی پیش‌فرض می‌سازه.
     English: Create a default config file if one doesn't already exist.
     """
-    c.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    _ensure_secure_config_dir()
     if not c.CONFIG_FILE.exists():
         with open(c.CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(
@@ -75,6 +91,7 @@ def save_default_config() -> None:
                 ensure_ascii=False,
                 indent=2,
             )
+        os.chmod(c.CONFIG_FILE, 0o600)
 
 
 def write_config(cfg: dict) -> None:
@@ -82,9 +99,10 @@ def write_config(cfg: dict) -> None:
     فارسی: دیکشنری تنظیمات را کامل روی فایل کانفیگ می‌نویسد.
     English: Write a full settings dict to the config file.
     """
-    c.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    _ensure_secure_config_dir()
     with open(c.CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
+    os.chmod(c.CONFIG_FILE, 0o600)
 
 
 def parse_set_argument(arg: str) -> tuple[str, object]:

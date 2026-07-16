@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-ODL_VERSION: str = "2.3.0"
+ODL_VERSION: str = "2.3.1"
 GITHUB_REPO: str = "msoleimani62/open-downloader-cli"
 
 ALLOWED_QUALITIES: list[int] = [144, 240, 360, 480, 720, 1080, 1440, 2160]
@@ -25,7 +25,17 @@ LOG_FILE: Path = CONFIG_DIR / "opendl.log"
 LOG_DIR: Path = CONFIG_DIR / "logs"
 PLAYLIST_STATE_DIR: Path = CONFIG_DIR / "playlist_state"
 
-BATCH_SIZE: int = 5
+BATCH_SIZE: int = 3
+# فارسی: قبلاً واقعاً بی‌نهایت بود (float('inf'))؛ مشکلش این بود که روی
+#        یه لینک واقعاً مرده (حذف‌شده/private/شبکه‌ی قطع‌شده) برنامه بدون
+#        هیچ پیام خطایی تا ابد گیر می‌کرد. ۳۰ برای شبکه‌ی ناپایدار (مثل
+#        VPN/Xray) کاملاً کافیه، ولی در نهایت یه خطای واضح نشون می‌ده.
+# English: This used to be truly infinite (float('inf')); the problem was
+#          that on a genuinely dead link (deleted/private/network down)
+#          the program would hang forever with no error at all. 30 is
+#          plenty for a flaky network (e.g. VPN/Xray) while still
+#          eventually surfacing a clear error.
+MAX_RETRIES: int = 30
 # فارسی: طبق توصیه‌ی فعلی OWASP برای PBKDF2-HMAC-SHA256 (حداقل ۶۰۰٬۰۰۰).
 # English: Per the current OWASP recommendation for PBKDF2-HMAC-SHA256 (minimum 600,000).
 PBKDF2_ITERATIONS: int = 600_000

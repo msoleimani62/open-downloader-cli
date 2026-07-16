@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-downloader-cli"
-version = "2.3.0"
+version = "2.3.1"
 description = "A simple, secure, resumable downloader for the command line, built on yt-dlp (supports any site yt-dlp does, not just YouTube)"
 readme = "README.md"
 license = "MIT"

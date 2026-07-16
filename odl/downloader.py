@@ -152,19 +152,27 @@ def ydl_opts_base(
         "format": "bestaudio/best" if audio_only else build_format(quality),
         "outtmpl": out_template,
         "continuedl": True,
-        # فارسی: "infinite" فقط وقتی از خط فرمان yt-dlp (--retries infinite)
-        #        داده بشه به float('inf') تبدیل می‌شه؛ از API پایتون که ما
-        #        استفاده می‌کنیم این تبدیل انجام نمی‌شه و رشته‌ی خام می‌مونه،
-        #        که باعث TypeError موقع مقایسه‌ی retry counter می‌شه —
-        #        دقیقاً باگی که با دانلود HLS/fragment (مثل Vimeo) آشکار شد.
-        # English: "infinite" is only converted to float('inf') when given
-        #          via yt-dlp's own CLI (--retries infinite); through the
-        #          Python API we use, that conversion never happens and
-        #          the raw string is kept, causing a TypeError when the
-        #          retry counter is compared — exactly the bug that
-        #          surfaced with HLS/fragment downloads (e.g. Vimeo).
-        "retries": float("inf"),
-        "fragment_retries": float("inf"),
+        # فارسی: عدد محدود (نه بی‌نهایت واقعی). قبلاً اینجا رشته‌ی
+        #        "infinite" بود که فقط از خط فرمان yt-dlp به float('inf')
+        #        تبدیل می‌شه، نه از API پایتون که ما استفاده می‌کنیم —
+        #        همون چیزی که باعث TypeError در دانلود HLS (مثل Vimeo)
+        #        می‌شد. بعد به float('inf') واقعی فیکس شد، ولی مشکل
+        #        دیگه‌ای داشت: روی یه لینک واقعاً مرده، برنامه بدون هیچ
+        #        خطایی تا ابد گیر می‌کرد. yt-dlp خودش بین هر retry
+        #        backoff (تأخیر تصاعدی) می‌ذاره، پس نیازی به منطق backoff
+        #        دستی نداریم؛ فقط باید یه سقف داشته باشیم.
+        # English: A bounded number, not true infinity. This used to be
+        #          the string "infinite", which is only converted to
+        #          float('inf') by yt-dlp's own CLI, not the Python API we
+        #          use — that caused a TypeError on HLS downloads (e.g.
+        #          Vimeo). It was then fixed to real float('inf'), but
+        #          that had its own problem: on a genuinely dead link, the
+        #          program would hang forever with no error. yt-dlp
+        #          already backs off (exponential delay) between retries
+        #          on its own, so no custom backoff logic is needed here;
+        #          we just need a ceiling.
+        "retries": c.MAX_RETRIES,
+        "fragment_retries": c.MAX_RETRIES,
         "noprogress": True,
         "quiet": True,
         "no_warnings": True,

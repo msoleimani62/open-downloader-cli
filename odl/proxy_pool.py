@@ -75,6 +75,21 @@ def load_proxy_candidates(source: str) -> list[str]:
              so a huge file can't turn into an hours-long scan.
     """
     if source.startswith("http://") or source.startswith("https://"):
+        if source.startswith("http://"):
+            # فارسی: به‌جای یه فلگ «trusted» که فقط یه چک‌باکس بی‌معنیه
+            #        (کاربر می‌زنه بدون این‌که واقعاً چیزی تأیید بشه، حس
+            #        امنیت کاذب می‌ده)، اینجا یه هشدار واقعی و مشخص می‌دیم:
+            #        روی HTTP ساده، کسی بین راه می‌تونه لیست پروکسی رو
+            #        عوض کنه و پروکسی خودش رو جای پروکسی واقعی جا بزنه.
+            # English: Instead of a "trusted" flag (which would just be a
+            #          meaningless checkbox — the user ticks it without
+            #          anything actually being verified, creating false
+            #          confidence), we give a real, specific warning here:
+            #          over plain HTTP, someone in the middle could swap
+            #          the proxy list and substitute their own proxy.
+            log_warning(
+                f"Fetching proxy list over plain HTTP ({source}) — this can be tampered with in transit. Prefer HTTPS."
+            )
         try:
             req = urllib.request.Request(source, headers={"User-Agent": "odl-proxy-pool"})
             with urllib.request.urlopen(req, timeout=10) as response:

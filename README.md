@@ -71,29 +71,19 @@ pip install git+https://github.com/msoleimani62/open-downloader-cli.git
 
 ## 📋 پیش‌نیازها
 
-- Python 3.9 یا بالاتر
-- کتابخانه‌های `yt-dlp` · `rich` · `cryptography`
-- `ffmpeg` (برای merge صدا/تصویر و تبدیل زیرنویس)
+- Python 3.10 یا بالاتر
+- `ffmpeg` (برای merge صدا/تصویر و تبدیل زیرنویس — این یکی رو باید جدا با پکیج‌منیجر سیستم نصب کنی، مثل `pacman -S ffmpeg` یا `apt install ffmpeg`)
+
+کتابخانه‌های پایتونی (`yt-dlp`، `rich`، `cryptography`) نیازی به نصب دستی ندارن — با خود `odl` خودکار نصب می‌شن (بخش «شروع سریع» بالا).
 
 ---
 
 ## 📦 نصب
 
-```bash
-# نصب کتابخانه‌های مورد نیاز
-pip install yt-dlp rich cryptography --break-system-packages
-
-# کپی کردن اسکریپت اصلی
-mkdir -p ~/.local/bin
-cp odl.py ~/.local/bin/odl
-chmod +x ~/.local/bin/odl
-```
-
-اگه `~/.local/bin` توی PATH نیست:
+همون دستور «شروع سریع» بالا کافیه؛ نیازی به کپی دستی فایل یا نصب جدا کردن کتابخانه‌ها نیست:
 
 ```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+pip install open-downloader-cli
 ```
 
 بررسی سلامت نصب:
@@ -222,7 +212,7 @@ odl --proxy-pool-refresh "لینک ویدیو"
 ## 🗑️ حذف کامل
 
 ```bash
-rm -f ~/.local/bin/odl
+pip uninstall open-downloader-cli
 rm -rf ~/.config/opendl
 rm -f ~/cookies.txt
 ```
@@ -231,7 +221,7 @@ rm -f ~/cookies.txt
 
 ## 🧭 نقشه‌ی راه
 
-آپدیت خودکار در پس‌زمینه · پروفایل‌های چندگانه‌ی کوکی · تاریخچه‌ی دانلود · حالت تعاملی · محدودیت سرعت · زمان‌بندی دانلود · حذف موارد تکراری · اعلان بعد از اتمام · خروجی JSON · تست‌های خودکار (pytest)
+آپدیت خودکار در پس‌زمینه · پروفایل‌های چندگانه‌ی کوکی · تاریخچه‌ی دانلود · حالت تعاملی · محدودیت سرعت · زمان‌بندی دانلود · حذف موارد تکراری · اعلان بعد از اتمام · خروجی JSON · GUI دسکتاپ (PySide6) · اپ اندروید (Kotlin + Chaquopy)
 
 ---
 
@@ -292,27 +282,19 @@ pip install git+https://github.com/msoleimani62/open-downloader-cli.git
 
 ## 📋 Requirements
 
-- Python 3.9+
-- `yt-dlp` · `rich` · `cryptography`
-- `ffmpeg` (for merging audio/video and converting subtitles)
+- Python 3.10+
+- `ffmpeg` (for merging audio/video and converting subtitles — install this separately via your system's package manager, e.g. `pacman -S ffmpeg` or `apt install ffmpeg`)
+
+Python libraries (`yt-dlp`, `rich`, `cryptography`) don't need manual installation — `odl` installs them automatically (see Quick Start above).
 
 ---
 
 ## 📦 Installation
 
-```bash
-pip install yt-dlp rich cryptography --break-system-packages
-
-mkdir -p ~/.local/bin
-cp odl.py ~/.local/bin/odl
-chmod +x ~/.local/bin/odl
-```
-
-If `~/.local/bin` isn't in your PATH:
+The same "Quick Start" command above is all you need; no manual file copying or separate library installs:
 
 ```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+pip install open-downloader-cli
 ```
 
 Check installation health:
@@ -441,7 +423,7 @@ odl --proxy-pool-refresh "video URL"
 ## 🗑️ Uninstallation
 
 ```bash
-rm -f ~/.local/bin/odl
+pip uninstall open-downloader-cli
 rm -rf ~/.config/opendl
 rm -f ~/cookies.txt
 ```
@@ -450,7 +432,7 @@ rm -f ~/cookies.txt
 
 ## 🧭 Roadmap
 
-Background auto-update · multiple cookie profiles · download history · interactive mode · speed limiting · scheduled downloads · duplicate detection · completion notifications · JSON output · automated tests (pytest)
+Background auto-update · multiple cookie profiles · download history · interactive mode · speed limiting · scheduled downloads · duplicate detection · completion notifications · JSON output · desktop GUI (PySide6) · Android app (Kotlin + Chaquopy)
 
 ---
 

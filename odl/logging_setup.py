@@ -8,6 +8,7 @@ English: Real logging setup using Python's logging module — size-based
 from __future__ import annotations
 
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 
 from . import constants as c
@@ -32,6 +33,11 @@ def get_logger() -> logging.Logger:
         return _logger
 
     c.LOG_DIR.mkdir(parents=True, exist_ok=True)
+    # فارسی: لاگ‌ها می‌تونن URL، آدرس پروکسی، یا مسیرهای فایل رو نگه دارن؛
+    #        روی دستگاه‌های اشتراکی این محدودیت تنها لایه‌ی محافظتشونه.
+    # English: Logs can contain URLs, proxy addresses, or file paths; on a
+    #          shared device this restriction is their only protection.
+    os.chmod(c.LOG_DIR, 0o700)
 
     logger = logging.getLogger("odl")
     logger.setLevel(logging.DEBUG)

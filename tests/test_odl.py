@@ -433,6 +433,21 @@ class TestConfigSetParsing:
         reloaded = config_module.load_config()
         assert reloaded["quality"] == 1080
 
+    def test_config_dir_and_file_have_restrictive_permissions(self):
+        # فارسی: config.json برخلاف فایل کوکی رمزنگاری نمی‌شه (می‌تونه
+        #        آدرس پروکسی یا مسیرها رو نگه داره)، پس روی دستگاه‌های
+        #        اشتراکی تنها لایه‌ی محافظتش دسترسی فایل‌سیستمه.
+        # English: Unlike the cookie file, config.json isn't encrypted (it
+        #          can hold a proxy address or paths), so on a shared
+        #          device filesystem permissions are its only protection.
+        config_module.save_default_config()
+        assert oct(c.CONFIG_DIR.stat().st_mode)[-3:] == "700"
+        assert oct(c.CONFIG_FILE.stat().st_mode)[-3:] == "600"
+
+        cfg = config_module.load_config()
+        config_module.write_config(cfg)
+        assert oct(c.CONFIG_FILE.stat().st_mode)[-3:] == "600"
+
     def test_batch_size_zero_raises(self):
         # فارسی: بدون این چک، playlist.py با batch_size=0 روی
         #        range(0, n, 0) کرش می‌کند (ValueError).
@@ -487,21 +502,26 @@ class TestIgnoreErrorsBehavior:
         assert opts["ignoreerrors"] is True
 
     def test_retries_are_numeric_not_the_string_infinite(self):
-        # فارسی: "infinite" رشته‌ای فقط از طریق CLI خود yt-dlp به
-        #        float('inf') تبدیل می‌شه؛ از API پایتون رشته‌ی خام
-        #        می‌مونه و توی دانلود fragment/HLS (مثلاً Vimeo)
-        #        TypeError می‌داد چون شمارنده‌ی retry با یه رشته
-        #        مقایسه می‌شد.
-        # English: The string "infinite" is only converted to
-        #          float('inf') via yt-dlp's own CLI; through the Python
-        #          API it stays a raw string and caused a TypeError
-        #          during fragment/HLS downloads (e.g. Vimeo) since the
-        #          retry counter was compared against a string.
+        # فارسی: "infinite" رشته‌ای فقط از طریق CLI خود yt-dlp به عدد
+        #        تبدیل می‌شه؛ از API پایتون رشته‌ی خام می‌مونه و توی
+        #        دانلود fragment/HLS (مثلاً Vimeo) TypeError می‌داد چون
+        #        شمارنده‌ی retry با یه رشته مقایسه می‌شد. الان یه سقف
+        #        محدود (MAX_RETRIES) به‌جای رشته یا بی‌نهایت واقعیه —
+        #        بی‌نهایت واقعی هم مشکل داشت: روی لینک مرده تا ابد گیر
+        #        می‌کرد بدون هیچ خطایی.
+        # English: The string "infinite" is only converted to a number via
+        #          yt-dlp's own CLI; through the Python API it stays a raw
+        #          string and caused a TypeError during fragment/HLS
+        #          downloads (e.g. Vimeo) since the retry counter was
+        #          compared against a string. It's now a bounded ceiling
+        #          (MAX_RETRIES) instead of a string or true infinity —
+        #          true infinity had its own problem: hanging forever on
+        #          a dead link with no error at all.
         opts = downloader.ydl_opts_base(None, 480, False, False, "%(title)s.%(ext)s", False, None, {})
-        assert opts["retries"] == float("inf")
-        assert opts["fragment_retries"] == float("inf")
-        assert isinstance(opts["retries"], float)
-        assert isinstance(opts["fragment_retries"], float)
+        assert opts["retries"] == c.MAX_RETRIES
+        assert opts["fragment_retries"] == c.MAX_RETRIES
+        assert isinstance(opts["retries"], int)
+        assert isinstance(opts["fragment_retries"], int)
 
 
 class TestProxyPool:
@@ -510,6 +530,34 @@ class TestProxyPool:
 
     def test_normalize_proxy_keeps_existing_scheme(self):
         assert proxy_pool._normalize_proxy("socks5://1.2.3.4:1080") == "socks5://1.2.3.4:1080"
+
+    def test_warns_on_plain_http_source(self, monkeypatch):
+        # فارسی: به‌جای یه فلگ trust قلابی، منبع HTTP (نه HTTPS) باید یه
+        #        هشدار واقعی بده چون قابل دستکاری در مسیره.
+        # English: Instead of a fake trust flag, an HTTP (not HTTPS)
+        #          source should give a real warning since it's tamperable
+        #          in transit.
+        warnings = []
+        monkeypatch.setattr(proxy_pool, "log_warning", lambda msg: warnings.append(msg))
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return b"http://1.2.3.4:8080\n"
+
+        monkeypatch.setattr(proxy_pool.urllib.request, "urlopen", lambda req, timeout=10: FakeResponse())
+
+        proxy_pool.load_proxy_candidates("http://example.com/proxies.txt")
+        assert any("HTTP" in w for w in warnings)
+
+        warnings.clear()
+        proxy_pool.load_proxy_candidates("https://example.com/proxies.txt")
+        assert warnings == []
 
     def test_load_candidates_from_file_skips_comments_and_blanks(self, tmp_path):
         source_file = tmp_path / "proxies.txt"
