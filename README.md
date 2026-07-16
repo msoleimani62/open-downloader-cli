@@ -7,14 +7,30 @@
 
 بر پایه‌ی / Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp) · دستور اجرا / Command: `odl`
 
+[![Tests](https://github.com/msoleimani62/open-downloader-cli/actions/workflows/tests.yml/badge.svg)](https://github.com/msoleimani62/open-downloader-cli/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
+
 **فارسی | [English ⬇](#-english)**
 
 </div>
 
 ---
 
+## ⚡ شروع سریع
+
+```bash
+pip install git+https://github.com/msoleimani62/open-downloader-cli.git
+odl "لینک ویدیوی یوتیوب"
+```
+
+همین. بار اول اگه `cookies.txt` نداشته باشی راهنمای export نشونت می‌ده؛ اگه داشته باشی خودش با رمز اصلی رمزنگاریش می‌کنه و شروع به دانلود می‌کنه.
+
+---
+
 ## 📚 فهرست مطالب
 
+- [شروع سریع](#-شروع-سریع)
 - [ویژگی‌ها](#-ویژگیها)
 - [پیش‌نیازها](#-پیشنیازها)
 - [نصب](#-نصب)
@@ -230,6 +246,17 @@ MIT — فایل [LICENSE](LICENSE) رو ببین.
 Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp) · Command: `odl`
 
 </div>
+
+---
+
+## ⚡ Quick Start
+
+```bash
+pip install git+https://github.com/msoleimani62/open-downloader-cli.git
+odl "YouTube video URL"
+```
+
+That's it. On first run, if you don't have a `cookies.txt`, it shows you the export guide; if you do, it encrypts it with a master password and starts downloading.
 
 ---
 

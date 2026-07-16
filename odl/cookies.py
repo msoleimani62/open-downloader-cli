@@ -9,6 +9,7 @@ English: All cookie-related logic — environment detection, automatic
 from __future__ import annotations
 
 import base64
+import contextlib
 import getpass
 import json
 import os
@@ -20,14 +21,12 @@ import time
 import traceback
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Tuple
 
 from rich.panel import Panel
 from rich.prompt import Confirm
 from rich.table import Table
 
 from . import constants as c
-from . import state
 from .logging_setup import log_debug_traceback
 from .state import console
 
@@ -39,6 +38,38 @@ try:
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
+
+
+class CookieError(Exception):
+    """
+    فارسی: کلاس پایه‌ی همه‌ی خطاهای مربوط به کوکی که لایه‌ی UI (فعلاً
+           CLI، بعداً GUI/اندروید) باید مدیریتشان کند. این ماژول عمداً
+           بدون sys.exit نوشته شده — برخلاف نسخه‌ی قبلی‌اش که خطاها
+           باعث بسته‌شدن کامل پردازه می‌شدند (که یعنی روی یک اپ GUI،
+           کل برنامه بی‌هوا می‌بست). حالا هر خطا یک exception معمولی
+           است که لایه‌ی فراخوان می‌تواند بگیرد و به شکل مناسب همان
+           لایه (پیام ترمینال، دیالوگ Qt، Toast اندروید) نشان دهد.
+    English: Base class for all cookie-related errors that the UI layer
+             (CLI today, GUI/Android later) must handle. This module is
+             deliberately written without sys.exit — unlike its previous
+             version, where errors killed the whole process outright
+             (meaning on a GUI app, the entire program would vanish
+             without warning). Now every error is a plain exception the
+             caller can catch and display appropriately for its own layer
+             (a terminal message, a Qt dialog, an Android toast).
+    """
+
+
+class CryptoUnavailableError(CookieError):
+    """فارسی: کتابخانه‌ی cryptography نصب نیست. English: The cryptography library isn't installed."""
+
+
+class EncryptedCookieReadError(CookieError):
+    """فارسی: فایل کوکی رمزنگاری‌شده خراب/غیرقابل‌خواندن است. English: The encrypted cookie file is corrupt/unreadable."""
+
+
+class MaxPasswordAttemptsError(CookieError):
+    """فارسی: تلاش‌ها تمام شد و کاربر بازنشانی را رد کرد. English: Attempts ran out and the user declined a reset."""
 
 
 class Environment(Enum):
@@ -96,7 +127,7 @@ def _looks_like_android_kernel() -> bool:
     return any(signal in mounts for signal in c.ANDROID_KERNEL_MOUNT_SIGNALS)
 
 
-def _chroot_distro_id() -> Optional[str]:
+def _chroot_distro_id() -> str | None:
     """
     فارسی: شناسه‌ی توزیع (ID در /etc/os-release) داخل chroot فعلی را
            برمی‌گرداند، مثلاً «kali». اگر پیدا نشد None برمی‌گردد.
@@ -177,7 +208,7 @@ def is_desktop_linux() -> bool:
     return detect_environment() is Environment.DESKTOP_LINUX
 
 
-def _extract_via_ytdlp_browser(browser: str) -> Optional[str]:
+def _extract_via_ytdlp_browser(browser: str) -> str | None:
     """
     فارسی: با قابلیت داخلی yt-dlp، کوکی‌ها را مستقیم از پروفایل مرورگر
            دسکتاپ می‌خواند و به متن Netscape تبدیل می‌کند.
@@ -215,7 +246,7 @@ def _extract_via_ytdlp_browser(browser: str) -> Optional[str]:
         tmp_path.unlink(missing_ok=True)
 
 
-def find_android_firefox_profile() -> Optional[Path]:
+def find_android_firefox_profile() -> Path | None:
     """
     فارسی: اگه بشه مستقیم (مثلاً با روت) به دیتابیس کوکی فایرفاکس اندروید
            خوندن دسترسی داشت، مسیر پوشه‌ی پروفایل را برمی‌گرداند.
@@ -234,7 +265,7 @@ def find_android_firefox_profile() -> Optional[Path]:
     return None
 
 
-def _extract_via_android_firefox(profile_dir: Path) -> Optional[str]:
+def _extract_via_android_firefox(profile_dir: Path) -> str | None:
     """
     فارسی: کوکی‌های یوتیوب/گوگل را مستقیم از دیتابیس SQLite فایرفاکس اندروید
            می‌خواند و به فرمت Netscape تبدیل می‌کند.
@@ -328,7 +359,9 @@ def find_and_import_cookies_automatically(force: bool = False) -> bool:
                 shutil.copy(candidate, c.COOKIES_DEFAULT)
             except Exception:
                 continue
-            console.print(f"[green]✔ Found an exported cookie file at {candidate} and imported it automatically.[/green]")
+            console.print(
+                f"[green]✔ Found an exported cookie file at {candidate} and imported it automatically.[/green]"
+            )
             return True
 
     return False
@@ -358,16 +391,17 @@ def print_cookie_export_guide() -> None:
 
 def _require_crypto() -> None:
     """
-    فارسی: اگه کتابخونه‌ی cryptography نصب نباشه، با پیام واضح خروج می‌کنه.
-    English: Exit with a clear message if the cryptography library is missing.
+    فارسی: اگه کتابخونه‌ی cryptography نصب نباشه، CryptoUnavailableError می‌اندازد.
+    English: Raise CryptoUnavailableError if the cryptography library is missing.
     """
     if not CRYPTO_AVAILABLE:
-        console.print("[red]The 'cryptography' library is not installed.[/red]")
-        console.print("Install it with: pip install cryptography --break-system-packages")
-        sys.exit(1)
+        raise CryptoUnavailableError(
+            "The 'cryptography' library is not installed. "
+            "Install it with: pip install cryptography --break-system-packages"
+        )
 
 
-def derive_key(password: str, salt: bytes, iterations: Optional[int] = None) -> bytes:
+def derive_key(password: str, salt: bytes, iterations: int | None = None) -> bytes:
     """
     فارسی: از رمز اصلی و یک salt، کلید رمزنگاری AES (از طریق Fernet) می‌سازه.
            iterations باید همیشه با مقداری که هنگام رمزنگاری استفاده شده یکی باشد
@@ -455,28 +489,24 @@ def _prompt_new_master_password() -> str:
         return pw1
 
 
-def _write_temp_cookie_file(data: bytes) -> Tuple[str, c.CleanupFn]:
+def _write_temp_cookie_file(data: bytes) -> tuple[str, c.CleanupFn]:
     """
     فارسی: دیتای کوکی رو در یک فایل موقت با دسترسی محدود (600) می‌نویسه.
     English: Write cookie data to a temporary file with restricted (600) permissions.
     """
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix="_odl_cookies.txt")
-    try:
+    with tempfile.NamedTemporaryFile(delete=False, suffix="_odl_cookies.txt") as tmp:
         tmp.write(data)
-    finally:
-        tmp.close()
-    os.chmod(tmp.name, 0o600)
+        tmp_name = tmp.name
+    os.chmod(tmp_name, 0o600)
 
     def cleanup() -> None:
-        try:
-            os.unlink(tmp.name)
-        except FileNotFoundError:
-            pass
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp_name)
 
-    return tmp.name, cleanup
+    return tmp_name, cleanup
 
 
-def secure_cookies_setup(auto: bool = False) -> Tuple[Optional[str], "c.CleanupFn"]:
+def secure_cookies_setup(auto: bool = False) -> tuple[str | None, c.CleanupFn]:
     """
     فارسی: رمزنگاری فایل cookies.txt موجود با یک رمز اصلی (که هیچ‌جا ذخیره نمی‌شه).
     English: Encrypt the existing cookies.txt file using a master password
@@ -502,9 +532,7 @@ def secure_cookies_setup(auto: bool = False) -> Tuple[Optional[str], "c.CleanupF
             "  [bold]4.[/bold] From now on, odl will ask for this same password each time\n"
             "     it needs to use your cookies — it is never saved anywhere.\n"
         )
-    console.print(
-        "[cyan]Choose a master password (it is never stored anywhere — only you will know it).[/cyan]"
-    )
+    console.print("[cyan]Choose a master password (it is never stored anywhere — only you will know it).[/cyan]")
 
     master_password = _prompt_new_master_password()
 
@@ -539,7 +567,7 @@ def print_cookie_status() -> None:
         perm_display = f"[green]{perm}[/green]" if perm == "600" else f"[yellow]{perm} (expected 600)[/yellow]"
         table.add_row("[bold]Permissions[/bold]", perm_display)
         try:
-            with open(c.ENCRYPTED_COOKIES_FILE, "r", encoding="utf-8") as f:
+            with open(c.ENCRYPTED_COOKIES_FILE, encoding="utf-8") as f:
                 payload = json.load(f)
             imported_at = payload.get("imported_at")
             if imported_at:
@@ -570,7 +598,7 @@ def reset_encrypted_cookies() -> None:
     print_cookie_export_guide()
 
 
-def resolve_cookies_path(cfg: dict) -> Tuple[Optional[str], "c.CleanupFn"]:
+def resolve_cookies_path(cfg: dict) -> tuple[str | None, c.CleanupFn]:
     """
     فارسی: رمز اصلی را می‌پرسد (تا سقف MAX_PASSWORD_ATTEMPTS بار)، کوکی
            رمزنگاری‌شده را به یک فایل موقت رمزگشایی می‌کند، یا در نبود آن
@@ -585,12 +613,11 @@ def resolve_cookies_path(cfg: dict) -> Tuple[Optional[str], "c.CleanupFn"]:
     if c.ENCRYPTED_COOKIES_FILE.exists():
         _require_crypto()
         try:
-            with open(c.ENCRYPTED_COOKIES_FILE, "r", encoding="utf-8") as f:
+            with open(c.ENCRYPTED_COOKIES_FILE, encoding="utf-8") as f:
                 payload = json.load(f)
         except Exception as e:
             log_debug_traceback(traceback.format_exc())
-            console.print(f"[red]Error reading the encrypted cookie file: {e}[/red]")
-            sys.exit(1)
+            raise EncryptedCookieReadError(f"Error reading the encrypted cookie file: {e}") from e
 
         for attempt in range(1, c.MAX_PASSWORD_ATTEMPTS + 1):
             password = getpass.getpass("Cookie master password: ")
@@ -610,7 +637,7 @@ def resolve_cookies_path(cfg: dict) -> Tuple[Optional[str], "c.CleanupFn"]:
             reset_encrypted_cookies()
             return None, (lambda: None)
 
-        sys.exit(1)
+        raise MaxPasswordAttemptsError("Maximum password attempts reached and reset was declined.")
 
     plain_path = Path(cfg["cookies"])
     if plain_path.exists():

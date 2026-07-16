@@ -25,8 +25,8 @@ import json
 import time
 import traceback
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from . import constants as c
 from .logging_setup import log_debug_traceback, log_info, log_warning
@@ -111,7 +111,7 @@ def load_proxy_candidates(source: str) -> list[str]:
 
 def test_proxy(
     proxy: str,
-    cookies_path: Optional[str] = None,
+    cookies_path: str | None = None,
     timeout: int = c.PROXY_TEST_TIMEOUT_SECONDS,
 ) -> ProxyCheckResult:
     """
@@ -151,7 +151,7 @@ def test_proxy(
         return ProxyCheckResult(proxy=proxy, ok=False, error=str(e))
 
 
-def load_cached_proxy(source: str) -> Optional[str]:
+def load_cached_proxy(source: str) -> str | None:
     """
     فارسی: آخرین پروکسی سالم ذخیره‌شده برای دقیقاً همین منبع را برمی‌گرداند.
            اگر منبع عوض شده باشد (مثلاً کاربر --proxy-pool دیگری داده)،
@@ -200,11 +200,11 @@ def clear_cached_proxy() -> None:
 
 def resolve_working_proxy(
     source: str,
-    cookies_path: Optional[str] = None,
+    cookies_path: str | None = None,
     force_refresh: bool = False,
-    on_event: Optional[ProxyTestEventCallback] = None,
+    on_event: ProxyTestEventCallback | None = None,
     tester: Callable[..., ProxyCheckResult] = test_proxy,
-) -> Optional[str]:
+) -> str | None:
     """
     فارسی:
         هسته‌ی اصلی استخر پروکسی:

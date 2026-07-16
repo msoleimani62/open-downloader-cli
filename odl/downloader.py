@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import traceback
 from pathlib import Path
-from typing import Optional, Tuple
 
 import yt_dlp
 from rich.progress import (
@@ -46,7 +45,7 @@ def is_youtube_url(url: str) -> bool:
     return any(domain in url for domain in ("youtube.com", "youtu.be"))
 
 
-def human_size(num_bytes: Optional[float]) -> str:
+def human_size(num_bytes: float | None) -> str:
     """
     فارسی: تعداد بایت رو به یک رشته‌ی خوانا (مثل «۱۲.۳ MB») تبدیل می‌کنه.
     English: Convert a byte count into a human-readable string (e.g. "12.3 MB").
@@ -61,7 +60,7 @@ def human_size(num_bytes: Optional[float]) -> str:
     return f"{size:.1f} PB"
 
 
-def resolve_video_url(entry: dict) -> Optional[str]:
+def resolve_video_url(entry: dict) -> str | None:
     """
     فارسی: از یک entry برگشتی حالت flat-playlist، لینک کامل ویدیو رو می‌سازه.
     English: Build a full video URL from a flat-playlist entry dict.
@@ -94,13 +93,13 @@ def build_extractor_args(cfg: dict, bypass: bool = False) -> dict:
 
 
 def ydl_opts_base(
-    cookies_path: Optional[str],
+    cookies_path: str | None,
     quality: int,
     sub_en: bool,
     sub_fa: bool,
     out_template: str,
     audio_only: bool,
-    proxy: Optional[str],
+    proxy: str | None,
     extractor_args: dict,
     ignore_errors: bool = True,
 ) -> dict:
@@ -134,9 +133,7 @@ def ydl_opts_base(
 
     postprocessors = []
     if audio_only:
-        postprocessors.append(
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
-        )
+        postprocessors.append({"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"})
 
     langs = []
     if sub_en:
@@ -158,7 +155,7 @@ def ydl_opts_base(
 def attempt_download_with_fallback(
     request: DownloadRequest,
     ignore_errors: bool,
-    on_event: Optional[DownloadEventCallback] = None,
+    on_event: DownloadEventCallback | None = None,
 ) -> DownloadResult:
     """
     فارسی:
@@ -198,11 +195,17 @@ def attempt_download_with_fallback(
         elif d["status"] == "finished":
             on_event(DownloadEvent(kind="status", message="finalizing"))
 
-    def attempt(current_extractor_args: dict) -> Tuple[bool, Optional[str]]:
+    def attempt(current_extractor_args: dict) -> tuple[bool, str | None]:
         opts = ydl_opts_base(
-            request.cookies_path, request.quality, request.sub_en, request.sub_fa,
-            request.out_template, request.audio_only, request.proxy,
-            current_extractor_args, ignore_errors=ignore_errors,
+            request.cookies_path,
+            request.quality,
+            request.sub_en,
+            request.sub_fa,
+            request.out_template,
+            request.audio_only,
+            request.proxy,
+            current_extractor_args,
+            ignore_errors=ignore_errors,
         )
         opts["progress_hooks"] = [hook]
         try:
@@ -246,13 +249,13 @@ def attempt_download_with_fallback(
 
 def download_single(
     url: str,
-    cookies_path: Optional[str],
+    cookies_path: str | None,
     quality: int,
     sub_en: bool,
     sub_fa: bool,
     out_dir: str,
     audio_only: bool,
-    proxy: Optional[str],
+    proxy: str | None,
     extractor_args: dict,
     allow_client_fallback: bool,
 ) -> bool:
@@ -324,7 +327,7 @@ def download_single(
             return True
 
         suggestion = _suggestion_for_category(result.error_category or "")
-        console.print(f"\n[red]✘ Download failed[/red]")
+        console.print("\n[red]✘ Download failed[/red]")
         console.print(f"[yellow]Reason:[/yellow] {result.error_category}")
         if len(result.tried_clients) > 1:
             console.print(f"[yellow]Tried clients:[/yellow] {', '.join(result.tried_clients)}")

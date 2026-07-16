@@ -9,8 +9,8 @@ English: Shared, fully UI-agnostic data models (no rich, no console, no
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 
 @dataclass
@@ -24,12 +24,12 @@ class DownloadRequest:
 
     url: str
     out_template: str
-    cookies_path: Optional[str] = None
+    cookies_path: str | None = None
     quality: int = 480
     sub_en: bool = False
     sub_fa: bool = False
     audio_only: bool = False
-    proxy: Optional[str] = None
+    proxy: str | None = None
     extractor_args: dict = field(default_factory=dict)
     allow_client_fallback: bool = True
 
@@ -46,11 +46,11 @@ class DownloadEvent:
     """
 
     kind: str
-    downloaded_bytes: Optional[int] = None
-    total_bytes: Optional[int] = None
-    title: Optional[str] = None
-    message: Optional[str] = None
-    client: Optional[str] = None
+    downloaded_bytes: int | None = None
+    total_bytes: int | None = None
+    title: str | None = None
+    message: str | None = None
+    client: str | None = None
 
 
 @dataclass
@@ -62,8 +62,8 @@ class DownloadResult:
     """
 
     ok: bool
-    error_message: Optional[str] = None
-    error_category: Optional[str] = None
+    error_message: str | None = None
+    error_category: str | None = None
     tried_clients: list = field(default_factory=list)
 
 
@@ -84,8 +84,8 @@ class ProxyCheckResult:
 
     proxy: str
     ok: bool
-    latency_ms: Optional[float] = None
-    error: Optional[str] = None
+    latency_ms: float | None = None
+    error: str | None = None
 
 
 # فارسی: امضای تابع callback که پیشرفت تست هر کاندید پروکسی را گزارش می‌کند.

@@ -14,16 +14,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from odl import constants as c
-
-from odl import cookies
-from odl import downloader
 from odl import config as config_module
-from odl import playlist_state
-from odl import proxy_pool
+from odl import constants as c
+from odl import cookies, downloader, playlist_state, proxy_pool
 from odl.diagnostics import _parse_version_tuple
-from odl.errors import ErrorCategory, CLIENT_FALLBACK_RETRYABLE_CATEGORIES, classify_error
-
+from odl.errors import CLIENT_FALLBACK_RETRYABLE_CATEGORIES, ErrorCategory, classify_error
 
 
 @pytest.fixture(autouse=True)
@@ -52,10 +47,25 @@ class TestCookieEncryption:
         key2 = cookies.derive_key("password-two", salt)
         assert key1 != key2
 
+    def test_require_crypto_raises_instead_of_exiting_when_unavailable(self, monkeypatch):
+        # فارسی: قبلاً این حالت مستقیم sys.exit صدا می‌زد که کل پردازه
+        #        (و در آینده کل اپ GUI) را می‌بست. حالا فقط یک exception
+        #        معمولی است که لایه‌ی فراخوان می‌تواند بگیرد.
+        # English: This used to call sys.exit directly, killing the whole
+        #          process (and, later, the whole GUI app). Now it's just
+        #          a plain exception the caller can catch.
+        monkeypatch.setattr(cookies, "CRYPTO_AVAILABLE", False)
+        with pytest.raises(cookies.CryptoUnavailableError):
+            cookies._require_crypto()
+
+    def test_resolve_cookies_path_raises_on_corrupt_encrypted_file(self):
+        c.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        c.ENCRYPTED_COOKIES_FILE.write_text("this is not valid json", encoding="utf-8")
+        with pytest.raises(cookies.EncryptedCookieReadError):
+            cookies.resolve_cookies_path({"cookies": str(c.COOKIES_DEFAULT)})
+
     def test_full_encrypt_decrypt_roundtrip_with_correct_password(self, monkeypatch):
-        c.COOKIES_DEFAULT.write_text(
-            "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tTEST\tabc123\n"
-        )
+        c.COOKIES_DEFAULT.write_text("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tTEST\tabc123\n")
         passwords = iter(["correct-horse-battery-staple", "correct-horse-battery-staple"])
         monkeypatch.setattr(cookies.getpass, "getpass", lambda prompt="": next(passwords))
 
@@ -88,7 +98,7 @@ class TestCookieEncryption:
         monkeypatch.setattr(cookies.Confirm, "ask", staticmethod(lambda *a, **k: False))
 
         cfg = {"cookies": str(c.COOKIES_DEFAULT)}
-        with pytest.raises(SystemExit):
+        with pytest.raises(cookies.MaxPasswordAttemptsError):
             cookies.resolve_cookies_path(cfg)
 
     def test_auto_mode_reuses_password_without_asking_twice(self, monkeypatch):
@@ -160,8 +170,10 @@ class TestBuildExtractorArgs:
 class TestHelpers:
     @pytest.mark.parametrize(
         "quality,expected",
-        [(480, "bestvideo[height<=480]+bestaudio/best[height<=480]"),
-         (1080, "bestvideo[height<=1080]+bestaudio/best[height<=1080]")],
+        [
+            (480, "bestvideo[height<=480]+bestaudio/best[height<=480]"),
+            (1080, "bestvideo[height<=1080]+bestaudio/best[height<=1080]"),
+        ],
     )
     def test_build_format(self, quality, expected):
         assert downloader.build_format(quality) == expected
@@ -405,9 +417,7 @@ class TestIgnoreErrorsBehavior:
         assert opts["ignoreerrors"] is True
 
     def test_ignore_errors_defaults_to_true_when_unspecified(self):
-        opts = downloader.ydl_opts_base(
-            None, 480, False, False, "%(title)s.%(ext)s", False, None, {}
-        )
+        opts = downloader.ydl_opts_base(None, 480, False, False, "%(title)s.%(ext)s", False, None, {})
         assert opts["ignoreerrors"] is True
 
 

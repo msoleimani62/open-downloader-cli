@@ -7,8 +7,8 @@ English: Shared project constants — paths, defaults, and fixed mappings
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 ODL_VERSION: str = "2.2.0"
 GITHUB_REPO: str = "msoleimani62/open-downloader-cli"

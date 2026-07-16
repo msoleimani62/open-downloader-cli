@@ -1,0 +1,94 @@
+name: Bug Report
+description: Report something that's broken or not working as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much of this as you can — it makes the fix much faster.
+
+  - type: input
+    id: odl-version
+    attributes:
+      label: odl version
+      description: Output of `odl --version`
+      placeholder: "Open Downloader CLI (odl) 2.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      description: Output of `python3 --version`
+      placeholder: "Python 3.13.14"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system / environment
+      description: If you're not sure, run `odl --doctor` and check the Environment row
+      options:
+        - Desktop Linux
+        - Kali NetHunter (Termux/proot)
+        - Android/Termux
+        - WSL (Windows Subsystem for Linux)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: os-details
+    attributes:
+      label: OS details
+      description: Output of `odl --doctor` OS/Architecture rows, or your distro name and version
+      placeholder: "Linux 4.14.186, aarch64, Kali 2026.3"
+    validations:
+      required: false
+
+  - type: input
+    id: command
+    attributes:
+      label: Command used
+      description: The exact command you ran (remove any private URLs/cookies if needed)
+      placeholder: 'odl -q 1080 "https://youtube.com/watch?v=..."'
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-log
+    attributes:
+      label: Error log
+      description: |
+        Re-run the same command with `--debug` added and paste the full output here.
+        Example: `odl --debug -q 1080 "https://youtube.com/watch?v=..."`
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I ran `odl --doctor` and checked the output above
+          required: false
+        - label: I searched existing issues and this hasn't been reported before
+          required: true

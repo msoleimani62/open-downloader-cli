@@ -8,7 +8,6 @@ English: Reading/writing the user config file, and helper functions for
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 from . import constants as c
 from .logging_setup import log_warning
@@ -41,7 +40,7 @@ def load_config() -> dict:
     }
     if c.CONFIG_FILE.exists():
         try:
-            with open(c.CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(c.CONFIG_FILE, encoding="utf-8") as f:
                 user_cfg = json.load(f)
             defaults.update(user_cfg)
         except Exception as e:
@@ -124,8 +123,8 @@ def parse_set_argument(arg: str) -> tuple[str, object]:
     if value_type is int:
         try:
             int_value = int(raw_value)
-        except ValueError:
-            raise ValueError(f"'{key}' expects an integer, got '{raw_value}'")
+        except ValueError as err:
+            raise ValueError(f"'{key}' expects an integer, got '{raw_value}'") from err
         if key == "batch_size" and int_value < 1:
             raise ValueError(f"'batch_size' must be 1 or greater, got {int_value}")
         if key == "quality" and int_value not in c.ALLOWED_QUALITIES:

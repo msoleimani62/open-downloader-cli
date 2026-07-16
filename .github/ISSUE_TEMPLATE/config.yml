@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / Discussion
+    url: https://github.com/msoleimani62/open-downloader-cli/discussions
+    about: For general questions that aren't a bug report or feature request

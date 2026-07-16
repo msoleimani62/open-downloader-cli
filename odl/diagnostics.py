@@ -75,7 +75,9 @@ def run_check_update() -> None:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", "--dry-run", "-U", "yt-dlp", "--break-system-packages"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         output = (result.stdout or "") + (result.stderr or "")
         if "Would install" in output:
@@ -98,7 +100,9 @@ def run_update() -> None:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", "-U", "yt-dlp", "--break-system-packages"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         console.print(result.stdout.strip())
         if result.returncode != 0:

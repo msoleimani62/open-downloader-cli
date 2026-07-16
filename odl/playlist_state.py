@@ -12,7 +12,6 @@ import hashlib
 import json
 import threading
 from pathlib import Path
-from typing import Optional
 
 from . import constants as c
 
@@ -48,7 +47,7 @@ def load_completed_ids(playlist_url: str) -> set[str]:
         return set()
 
 
-def mark_completed(playlist_url: str, video_id: Optional[str]) -> None:
+def mark_completed(playlist_url: str, video_id: str | None) -> None:
     """
     فارسی: یک ویدیو را به‌عنوان دانلودشده در فایل وضعیت ثبت می‌کند.
     English: Mark a video as downloaded in the state file.

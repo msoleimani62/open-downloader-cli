@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import platform
 import sys
-from typing import Optional
 
 import yt_dlp
 
@@ -16,6 +15,7 @@ from . import constants as c
 from . import state
 from .config import load_config, parse_set_argument, save_default_config, write_config
 from .cookies import (
+    CookieError,
     find_and_import_cookies_automatically,
     print_cookie_export_guide,
     print_cookie_status,
@@ -43,7 +43,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("url", nargs="?", help="YouTube video or playlist URL")
     parser.add_argument("-p", "--playlist", action="store_true", help="playlist mode")
     parser.add_argument(
-        "-q", "--quality", type=int, default=None,
+        "-q",
+        "--quality",
+        type=int,
+        default=None,
         help=f"video quality: {', '.join(map(str, c.ALLOWED_QUALITIES))}",
     )
     parser.add_argument("-s", "--sub-en", action="store_true", help="download English subtitles")
@@ -52,79 +55,103 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--output", type=str, default=None, help="custom output directory")
     parser.add_argument("-b", "--batch", type=int, default=None, help="number of concurrent downloads in playlist mode")
     parser.add_argument(
-        "-x", "--proxy", type=str, default=None,
+        "-x",
+        "--proxy",
+        type=str,
+        default=None,
         help="proxy address, e.g. socks5h://127.0.0.1:9050",
     )
     parser.add_argument(
-        "--proxy-pool", type=str, default=None, metavar="FILE_OR_URL",
+        "--proxy-pool",
+        type=str,
+        default=None,
+        metavar="FILE_OR_URL",
         help="a local file or URL with one proxy per line; odl will automatically "
-             "test, cache, and rotate through them (beginners: no need to know "
-             "which proxy actually works)",
+        "test, cache, and rotate through them (beginners: no need to know "
+        "which proxy actually works)",
     )
     parser.add_argument(
-        "--proxy-pool-refresh", action="store_true",
+        "--proxy-pool-refresh",
+        action="store_true",
         help="ignore the cached proxy and re-scan the whole --proxy-pool source",
     )
     parser.add_argument(
-        "--test-proxies", action="store_true",
+        "--test-proxies",
+        action="store_true",
         help="test every proxy in --proxy-pool (or the configured proxy_pool_source) "
-             "and show which ones work, without downloading anything",
+        "and show which ones work, without downloading anything",
     )
     parser.add_argument(
-        "--player-client", type=str, default=None,
+        "--player-client",
+        type=str,
+        default=None,
         help="force a specific YouTube playback client, e.g. 'android' (helps bypass bot detection)",
     )
     parser.add_argument(
-        "--bypass", action="store_true",
-        help="lighter/faster extraction that skips extra YouTube webpage requests "
-             "(may miss some formats or subtitles)",
+        "--bypass",
+        action="store_true",
+        help="lighter/faster extraction that skips extra YouTube webpage requests (may miss some formats or subtitles)",
     )
     parser.add_argument(
-        "--secure-cookies", action="store_true",
+        "--secure-cookies",
+        action="store_true",
         help="encrypt the current cookies.txt file and store a secure version",
     )
     parser.add_argument(
-        "--reset-cookies", action="store_true",
+        "--reset-cookies",
+        action="store_true",
         help="delete the encrypted cookie file (use this if you forgot the master password)",
     )
     parser.add_argument(
-        "--import-cookies", action="store_true",
+        "--import-cookies",
+        action="store_true",
         help="force a fresh automatic cookie import even if an encrypted cookie file already exists",
     )
     parser.add_argument(
-        "--cookie-status", action="store_true",
+        "--cookie-status",
+        action="store_true",
         help="show whether cookies are encrypted/plaintext/missing and when they were imported",
     )
     parser.add_argument(
-        "--no-estimate", action="store_true",
+        "--no-estimate",
+        action="store_true",
         help="skip the (potentially slow) total-size estimation step for large playlists",
     )
     parser.add_argument(
-        "--debug", action="store_true",
+        "--debug",
+        action="store_true",
         help="show detailed diagnostic info and full tracebacks on error",
     )
     parser.add_argument(
-        "--doctor", action="store_true",
+        "--doctor",
+        action="store_true",
         help="check the health of the installation (Python, yt-dlp, ffmpeg, cookies, permissions)",
     )
     parser.add_argument(
-        "--check-update", action="store_true",
+        "--check-update",
+        action="store_true",
         help="check whether a newer yt-dlp version is available, without installing it",
     )
     parser.add_argument(
-        "--update", action="store_true",
+        "--update",
+        action="store_true",
         help="update yt-dlp to the latest version",
     )
     parser.add_argument(
-        "--check-self-update", action="store_true",
+        "--check-self-update",
+        action="store_true",
         help="check whether a newer version of Open Downloader CLI itself is available",
     )
     parser.add_argument(
-        "--config", action="store_true",
+        "--config",
+        action="store_true",
         help="show the current configuration settings",
     )
     parser.add_argument(
-        "--set", type=str, default=None, metavar="KEY=VALUE",
+        "--set",
+        type=str,
+        default=None,
+        metavar="KEY=VALUE",
         help="change a configuration setting, e.g. --set quality=720",
     )
     parser.add_argument("--version", action="version", version=f"Open Downloader CLI (odl) {c.ODL_VERSION}")
@@ -191,7 +218,7 @@ def _run_test_proxies(source: str) -> None:
     table.add_column("Status", justify="center")
     table.add_column("Latency", justify="right")
 
-    first_working: Optional[str] = None
+    first_working: str | None = None
     for i, candidate in enumerate(candidates, start=1):
         console.print(f"[dim]Testing {i}/{len(candidates)}: {candidate}...[/dim]")
         result = test_proxy(candidate)
@@ -212,7 +239,7 @@ def _run_test_proxies(source: str) -> None:
         console.print("[red]None of the proxies worked.[/red]")
 
 
-def _resolve_proxy_via_pool(source: str, force_refresh: bool) -> Optional[str]:
+def _resolve_proxy_via_pool(source: str, force_refresh: bool) -> str | None:
     """
     فارسی: پروکسی سالم را از استخر می‌گیرد و پیشرفت تست را روی ترمینال
            نشان می‌دهد. اگر منبع در دسترس نبود یا هیچ پروکسی کار نکرد،
@@ -239,6 +266,32 @@ def _resolve_proxy_via_pool(source: str, force_refresh: bool) -> Optional[str]:
     if proxy is None:
         console.print("[yellow]No working proxy found in the pool; continuing without a proxy.[/yellow]")
     return proxy
+
+
+def _noop_cleanup() -> None:
+    """
+    فارسی: تابع cleanup پیش‌فرض وقتی هنوز فایل موقت کوکی‌ای ساخته نشده.
+    English: Default no-op cleanup before any temp cookie file exists.
+    """
+    return None
+
+
+def _exit_on_cookie_error(e: CookieError) -> None:
+    """
+    فارسی: پیام CookieError را روی ترمینال نشان می‌دهد و با کد ۱ خارج
+           می‌شود. این تنها جایی‌ست که چنین خطایی به بستن کامل پردازه
+           منجر می‌شود؛ لایه‌ی core (cookies.py) دیگر خودش sys.exit صدا
+           نمی‌زند — یعنی وقتی این تابع از داخل یک GUI صدا زده بشه، به‌جای
+           همین سه خط، می‌شه یه دیالوگ خطا نشون داد بدون این‌که کل اپ ببنده.
+    English: Print the CookieError's message and exit with code 1. This is
+             the only place such an error results in killing the whole
+             process; the core layer (cookies.py) no longer calls
+             sys.exit itself — meaning when this is called from a GUI
+             context instead, these three lines can become an error
+             dialog without the whole app disappearing.
+    """
+    console.print(f"[red]{e}[/red]")
+    sys.exit(1)
 
 
 def main() -> None:
@@ -290,7 +343,10 @@ def main() -> None:
         sys.exit(0)
 
     if args.secure_cookies:
-        secure_cookies_setup()
+        try:
+            secure_cookies_setup()
+        except CookieError as e:
+            _exit_on_cookie_error(e)
         sys.exit(0)
 
     # فارسی: چک نبود URL باید قبل از منطق کوکی باشد، وگرنه کاربری که فقط
@@ -306,10 +362,13 @@ def main() -> None:
 
     find_and_import_cookies_automatically(force=args.import_cookies)
 
-    auto_cookies_path: Optional[str] = None
-    auto_cleanup: c.CleanupFn = lambda: None
+    auto_cookies_path: str | None = None
+    auto_cleanup: c.CleanupFn = _noop_cleanup
     if c.COOKIES_DEFAULT.exists():
-        auto_cookies_path, auto_cleanup = secure_cookies_setup(auto=True)
+        try:
+            auto_cookies_path, auto_cleanup = secure_cookies_setup(auto=True)
+        except CookieError as e:
+            _exit_on_cookie_error(e)
 
     cfg = load_config()
     save_default_config()
@@ -356,37 +415,61 @@ def main() -> None:
     if auto_cookies_path:
         cookies_path, cleanup_cookies = auto_cookies_path, auto_cleanup
     else:
-        cookies_path, cleanup_cookies = resolve_cookies_path(cfg)
+        try:
+            cookies_path, cleanup_cookies = resolve_cookies_path(cfg)
+        except CookieError as e:
+            _exit_on_cookie_error(e)
 
     if cookies_path is None:
         print_cookie_export_guide()
 
     if state.DEBUG:
         from rich.panel import Panel
-        console.print(Panel(
-            f"Python: {platform.python_version()}\n"
-            f"odl: {c.ODL_VERSION}\n"
-            f"yt-dlp: {getattr(yt_dlp.version, '__version__', 'unknown')}\n"
-            f"OS: {platform.system()} {platform.release()}\n"
-            f"Proxy: {proxy or 'none'}\n"
-            f"Player client override: {cfg.get('player_client') or 'auto'}\n"
-            f"Cookies: {'yes' if cookies_path else 'no'}\n"
-            f"Quality: {quality}p\n"
-            f"Extractor args: {extractor_args}",
-            title="DEBUG INFO", border_style="magenta",
-        ))
+
+        console.print(
+            Panel(
+                f"Python: {platform.python_version()}\n"
+                f"odl: {c.ODL_VERSION}\n"
+                f"yt-dlp: {getattr(yt_dlp.version, '__version__', 'unknown')}\n"
+                f"OS: {platform.system()} {platform.release()}\n"
+                f"Proxy: {proxy or 'none'}\n"
+                f"Player client override: {cfg.get('player_client') or 'auto'}\n"
+                f"Cookies: {'yes' if cookies_path else 'no'}\n"
+                f"Quality: {quality}p\n"
+                f"Extractor args: {extractor_args}",
+                title="DEBUG INFO",
+                border_style="magenta",
+            )
+        )
 
     try:
         if args.playlist:
             download_playlist(
-                args.url, cookies_path, quality, args.sub_en, args.sub_fa,
-                out_dir, args.audio_only, batch_size, proxy, extractor_args,
-                allow_client_fallback, args.no_estimate,
+                args.url,
+                cookies_path,
+                quality,
+                args.sub_en,
+                args.sub_fa,
+                out_dir,
+                args.audio_only,
+                batch_size,
+                proxy,
+                extractor_args,
+                allow_client_fallback,
+                args.no_estimate,
             )
         else:
             download_single(
-                args.url, cookies_path, quality, args.sub_en, args.sub_fa,
-                out_dir, args.audio_only, proxy, extractor_args, allow_client_fallback,
+                args.url,
+                cookies_path,
+                quality,
+                args.sub_en,
+                args.sub_fa,
+                out_dir,
+                args.audio_only,
+                proxy,
+                extractor_args,
+                allow_client_fallback,
             )
     except KeyboardInterrupt:
         console.print("\n[yellow]Stopped. Run the same command again to resume automatically.[/yellow]")

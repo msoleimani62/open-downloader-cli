@@ -8,7 +8,6 @@ from __future__ import annotations
 import concurrent.futures
 import time
 from pathlib import Path
-from typing import Optional, Tuple
 
 import yt_dlp
 from rich.panel import Panel
@@ -32,8 +31,8 @@ from .state import console
 
 
 def fetch_playlist_entries(
-    url: str, cookies_path: Optional[str], proxy: Optional[str], extractor_args: dict
-) -> Tuple[list, str]:
+    url: str, cookies_path: str | None, proxy: str | None, extractor_args: dict
+) -> tuple[list, str]:
     """
     فارسی: لیست ویدیوهای یک پلی‌لیست و نام آن را (بدون دانلود) برمی‌گرداند.
     English: Fetch a playlist's video entries and its title without downloading.
@@ -58,7 +57,7 @@ def fetch_playlist_entries(
 
 
 def estimate_size(
-    url: str, cookies_path: Optional[str], quality: int, audio_only: bool, proxy: Optional[str], extractor_args: dict
+    url: str, cookies_path: str | None, quality: int, audio_only: bool, proxy: str | None, extractor_args: dict
 ) -> int:
     """
     فارسی: بدون دانلود واقعی، حجم تقریبی یک ویدیو را برمی‌گرداند.
@@ -84,8 +83,13 @@ def estimate_size(
 
 
 def _print_playlist_summary(
-    playlist_title: str, count: int, quality: int, audio_only: bool,
-    total_size: int, out_dir: str, proxy: Optional[str],
+    playlist_title: str,
+    count: int,
+    quality: int,
+    audio_only: bool,
+    total_size: int,
+    out_dir: str,
+    proxy: str | None,
 ) -> None:
     """
     فارسی: جدول خلاصه‌ی اطلاعات پلی‌لیست را قبل از شروع دانلود نمایش می‌دهد.
@@ -105,8 +109,8 @@ def _print_playlist_summary(
 def _print_download_summary(
     results: list[tuple[int, str, bool, str]],
     total_count: int,
-    elapsed_seconds: Optional[float] = None,
-    total_estimated_size: Optional[int] = None,
+    elapsed_seconds: float | None = None,
+    total_estimated_size: int | None = None,
 ) -> None:
     """
     فارسی: جدول نتیجه‌ی نهایی دانلود پلی‌لیست را به همراه زمان سپری‌شده،
@@ -144,19 +148,20 @@ def _print_download_summary(
         for category, cnt in sorted(failure_counts.items(), key=lambda kv: -kv[1]):
             console.print(f"  {category}: {cnt}")
         from . import constants as c
+
         console.print(f"\n[yellow]See this log file for error details: {c.LOG_DIR / 'errors.log'}[/yellow]")
 
 
 def download_playlist(
     url: str,
-    cookies_path: Optional[str],
+    cookies_path: str | None,
     quality: int,
     sub_en: bool,
     sub_fa: bool,
     out_dir: str,
     audio_only: bool,
     batch_size: int,
-    proxy: Optional[str],
+    proxy: str | None,
     extractor_args: dict,
     allow_client_fallback: bool,
     skip_estimate: bool,
@@ -224,18 +229,19 @@ def download_playlist(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-
         overall_task = progress.add_task("overall", title="[bold]Overall progress[/bold]", total=count)
 
         for batch_start in range(0, len(videos), batch_size):
-            batch = videos[batch_start:batch_start + batch_size]
+            batch = videos[batch_start : batch_start + batch_size]
             task_ids: dict[int, int] = {}
 
-            for idx, video_url, title, video_id in batch:
+            for idx, _video_url, title, _video_id in batch:
                 short_title = (title[:35] + "...") if len(title) > 35 else title
                 task_ids[idx] = progress.add_task("dl", title=f"[{idx}] {short_title}", total=None)
 
-            def worker(idx: int, video_url: Optional[str], title: str, video_id: Optional[str], task_id: int) -> tuple[int, str, bool, str]:
+            def worker(
+                idx: int, video_url: str | None, title: str, video_id: str | None, task_id: int
+            ) -> tuple[int, str, bool, str]:
                 if not video_url:
                     progress.update(task_id, title=f"[red]✘ [{idx}] invalid URL[/red]")
                     progress.update(overall_task, advance=1)
