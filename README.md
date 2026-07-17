@@ -86,8 +86,29 @@ pip install git+https://github.com/msoleimani62/open-downloader-cli.git
 pip install open-downloader-cli
 ```
 
-بررسی سلامت نصب:
+بررسی سلامت نصب (نسخه‌ی odl، yt-dlp، ffmpeg، کوکی، و اینکه خود دستور `odl` روی PATH هست یا نه):
 
+```bash
+odl --doctor
+```
+
+### 🛣️ اگه بعد از نصب، «odl: command not found» گرفتی
+
+`pip` فایل اجرایی `odl` رو کنار بقیه‌ی ابزارهای پایتون می‌ذاره ولی خودش آن پوشه رو به PATH اضافه نمی‌کنه — این رفتار خودِ pip‌ه، نه باگ odl. `odl --doctor` مسیر دقیق نصب‌شده روی *همون سیستم تو* رو نشون می‌ده و دستور رفعش رو هم چاپ می‌کنه؛ ولی معمول‌ترین حالت روی سیستم‌هایی که odl خودش براشون ساخته شده اینه:
+
+**روی Kali NetHunter (chroot/proot داخل ترموکس) یا آرچ لینوکس — با zsh:**
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**روی ترموکس خالص (بدون chroot):** معمولاً لازم نیست — `$PREFIX/bin` از قبل روی PATH ترموکسه. اگه باز هم پیدا نشد:
+```bash
+echo 'export PATH="$PREFIX/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+بعد از هر کدوم، دوباره چک کن:
 ```bash
 odl --doctor
 ```
@@ -133,6 +154,28 @@ odl -a "لینک"                              # فقط صدا (mp3)
 odl -s -fs "لینک"                          # زیرنویس انگلیسی + فارسی
 odl -p -q 720 "لینک پلی‌لیست"              # دانلود کل پلی‌لیست
 ```
+
+---
+
+## 🎬 پروفایل‌های دانلود (مثل ماکرو/اکشن فتوشاپ)
+
+اگه هر بار همون ترکیب فلگ‌ها رو تایپ می‌کنی (مثلاً «۱۰۸۰p + زیرنویس فارسی»)، یک‌بار بساز و بعد فقط نامش رو صدا بزن:
+
+```bash
+# ساخت پروفایل — هر فلگی که همین‌جا بدی، داخل پروفایل ذخیره می‌شه
+odl --save-profile fa1080 -q 1080 -fs
+
+# استفاده از پروفایل (URL لازمه، چون این‌بار داریم واقعاً دانلود می‌کنیم)
+odl --profile fa1080 "لینک ویدیو"
+
+# دیدن همه‌ی پروفایل‌های ذخیره‌شده
+odl --list-profiles
+
+# حذف یک پروفایل
+odl --delete-profile fa1080
+```
+
+نکته: هر فلگی که مستقیم توی همون دستور بدی، همیشه روی مقدار پروفایل برنده می‌شه — یعنی `odl --profile fa1080 -q 720 "لینک"` همچنان 720 رو دانلود می‌کنه، نه 1080 پروفایل. پروفایل فقط یک پیش‌فرض قابل‌بازنویسی‌ست.
 
 ---
 
@@ -189,10 +232,19 @@ odl --proxy-pool-refresh "لینک ویدیو"
 | `--cookie-status` | نمایش وضعیت فعلی کوکی |
 | `--no-estimate` | رد شدن از تخمین حجم (پلی‌لیست بزرگ) |
 | `--debug` | اطلاعات کامل دیباگ + traceback |
-| `--doctor` | بررسی سلامت نصب |
+| `--doctor` | بررسی سلامت نصب (شامل PATH) |
 | `--check-update` | بررسی آپدیت yt-dlp بدون نصب |
 | `--update` | آپدیت yt-dlp |
+| `--check-self-update` | بررسی دستی اینکه نسخه‌ی جدیدتری از خودِ odl منتشر شده یا نه |
+| `--profile` | استفاده از یک پروفایل ذخیره‌شده به‌عنوان پیش‌فرض این اجرا |
+| `--save-profile` | ذخیره‌ی فلگ‌های همین دستور به‌عنوان یک پروفایل نام‌دار |
+| `--list-profiles` | نمایش همه‌ی پروفایل‌های ذخیره‌شده |
+| `--delete-profile` | حذف یک پروفایل |
 | `--version` | نمایش نسخه |
+
+---
+
+> ℹ️ **چک خودکار آپدیت:** odl هر ۴۸ ساعت یک‌بار (به‌صورت کاملاً بی‌صدا و با یک تلاش کوتاه ۳ ثانیه‌ای) چک می‌کنه که نسخه‌ی جدیدتری منتشر شده یا نه. اگه شبکه در دسترس نبود، هیچ پیام یا تأخیری ایجاد نمی‌کنه؛ و هرگز چیزی رو خودش نصب نمی‌کنه — فقط اطلاع می‌ده.
 
 ---
 
@@ -206,6 +258,7 @@ odl --proxy-pool-refresh "لینک ویدیو"
 | نمی‌دونی کدوم پروکسی زنده‌ست | `odl --test-proxies --proxy-pool ~/proxies.txt` |
 | تشخیص محیط (`odl --doctor`) اشتباهه | `ODL_FORCE_ENVIRONMENT=kali_nethunter odl --doctor` (مقادیر مجاز: `android_termux`، `kali_nethunter`، `desktop_linux`، `wsl`، `other`) |
 | نمی‌دونی مشکل از کجاست | `odl --doctor` و `odl --debug "لینک"` |
+| بعد از نصب، `odl: command not found` | `odl --doctor` مسیر دقیق رو نشون می‌ده؛ معمولاً `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc` |
 
 ---
 
@@ -221,7 +274,7 @@ rm -f ~/cookies.txt
 
 ## 🧭 نقشه‌ی راه
 
-آپدیت خودکار در پس‌زمینه · پروفایل‌های چندگانه‌ی کوکی · تاریخچه‌ی دانلود · حالت تعاملی · محدودیت سرعت · زمان‌بندی دانلود · حذف موارد تکراری · اعلان بعد از اتمام · خروجی JSON · GUI دسکتاپ (PySide6) · اپ اندروید (Kotlin + Chaquopy)
+پروفایل‌های چندگانه‌ی کوکی · تاریخچه‌ی دانلود · حالت تعاملی · محدودیت سرعت · زمان‌بندی دانلود · حذف موارد تکراری · اعلان بعد از اتمام · خروجی JSON · GUI دسکتاپ (PySide6) · اپ اندروید (Kotlin + Chaquopy)
 
 ---
 
@@ -297,8 +350,29 @@ The same "Quick Start" command above is all you need; no manual file copying or 
 pip install open-downloader-cli
 ```
 
-Check installation health:
+Check installation health (odl version, yt-dlp, ffmpeg, cookies, and whether the `odl` command itself is on PATH):
 
+```bash
+odl --doctor
+```
+
+### 🛣️ Got "odl: command not found" after installing?
+
+`pip` places the `odl` executable alongside your other Python tools but doesn't add that directory to PATH itself — that's pip's own behavior, not an odl bug. `odl --doctor` shows the exact install path *on your actual system* and prints the fix command; but the common case on the systems odl targets is:
+
+**On Kali NetHunter (chroot/proot inside Termux) or Arch Linux — with zsh:**
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**On plain Termux (no chroot):** usually not needed — `$PREFIX/bin` is already on Termux's PATH. If it's still missing:
+```bash
+echo 'export PATH="$PREFIX/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Either way, verify with:
 ```bash
 odl --doctor
 ```
@@ -344,6 +418,28 @@ odl -a "URL"                    # audio only (mp3)
 odl -s -fs "URL"                # English + Persian subtitles
 odl -p -q 720 "playlist URL"    # download an entire playlist
 ```
+
+---
+
+## 🎬 Download Profiles (like Photoshop macros/actions)
+
+If you keep typing the same flag combination (e.g. "1080p + Persian subs"), save it once and just call it by name:
+
+```bash
+# create a profile — every flag given here gets saved into it
+odl --save-profile fa1080 -q 1080 -fs
+
+# use the profile (a URL is required, since this actually downloads)
+odl --profile fa1080 "video URL"
+
+# see all saved profiles
+odl --list-profiles
+
+# delete a profile
+odl --delete-profile fa1080
+```
+
+Note: any flag given directly on the command line always wins over the profile's value — so `odl --profile fa1080 -q 720 "URL"` still downloads at 720, not the profile's 1080. A profile is only an overridable default.
 
 ---
 
@@ -400,10 +496,19 @@ odl --proxy-pool-refresh "video URL"
 | `--cookie-status` | show current cookie status |
 | `--no-estimate` | skip size estimation (large playlists) |
 | `--debug` | full debug info + traceback |
-| `--doctor` | check installation health |
+| `--doctor` | check installation health (including PATH) |
 | `--check-update` | check for a yt-dlp update without installing |
 | `--update` | update yt-dlp |
+| `--check-self-update` | manually check whether a newer odl version has been released |
+| `--profile` | use a saved profile as this run's defaults |
+| `--save-profile` | save this command's flags as a named profile |
+| `--list-profiles` | show all saved profiles |
+| `--delete-profile` | delete a profile |
 | `--version` | show version |
+
+---
+
+> ℹ️ **Automatic update check:** odl checks once every 48 hours (completely silently, with a short 3-second attempt) whether a newer version has been released. If the network is unreachable, it causes no message or delay; it never installs anything itself — it only informs you.
 
 ---
 
@@ -417,6 +522,7 @@ odl --proxy-pool-refresh "video URL"
 | Not sure which proxy is alive | `odl --test-proxies --proxy-pool ~/proxies.txt` |
 | Environment detection (`odl --doctor`) is wrong | `ODL_FORCE_ENVIRONMENT=kali_nethunter odl --doctor` (allowed values: `android_termux`, `kali_nethunter`, `desktop_linux`, `wsl`, `other`) |
 | Not sure what's wrong | `odl --doctor` and `odl --debug "URL"` |
+| `odl: command not found` after installing | `odl --doctor` shows the exact path; usually `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc` |
 
 ---
 
@@ -432,7 +538,7 @@ rm -f ~/cookies.txt
 
 ## 🧭 Roadmap
 
-Background auto-update · multiple cookie profiles · download history · interactive mode · speed limiting · scheduled downloads · duplicate detection · completion notifications · JSON output · desktop GUI (PySide6) · Android app (Kotlin + Chaquopy)
+Multiple cookie profiles · download history · interactive mode · speed limiting · scheduled downloads · duplicate detection · completion notifications · JSON output · desktop GUI (PySide6) · Android app (Kotlin + Chaquopy)
 
 ---
 

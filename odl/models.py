@@ -92,3 +92,61 @@ class ProxyCheckResult:
 # English: The signature of the callback function reporting each proxy
 #          candidate's test progress.
 ProxyTestEventCallback = Callable[[int, int, ProxyCheckResult], None]
+
+
+@dataclass
+class PlaylistItemResult:
+    """
+    فارسی: نتیجه‌ی دانلود یک آیتم از پلی‌لیست. note برای موارد خاص مثل
+           "resumed" (قبلاً در اجرای قبلی کامل شده) استفاده می‌شود؛ لایه‌ی
+           UI بر اساس آن متن نمایشی مناسب را انتخاب می‌کند.
+    English: The result of downloading a single playlist item. note is used
+             for special cases like "resumed" (already completed in a
+             previous run); the UI layer picks the right display text
+             based on it.
+    """
+
+    index: int
+    title: str
+    ok: bool
+    error_category: str = ""
+    note: str = ""
+
+
+@dataclass
+class PlaylistDownloadEvent:
+    """
+    فارسی: یک رویداد لحظه‌ای در طول تخمین حجم یا دانلود دسته‌ای پلی‌لیست.
+           kind یکی از این مقادیر است:
+           "estimate_progress" (پیشرفت تخمین حجم)،
+           "batch_start" (شروع یک دسته‌ی جدید، همراه با لیست آیتم‌های آن)،
+           "item_progress" (پیشرفت دانلود یک آیتم)،
+           "item_status" (تغییر وضعیت مثل finalizing)،
+           "item_retry" (تلاش مجدد یک آیتم با کلاینت پخش دیگر)،
+           "item_done" (پایان یک آیتم، موفق یا ناموفق).
+    English: A single point-in-time event during playlist size estimation
+             or the batch download. kind is one of:
+             "estimate_progress" (size-estimation progress),
+             "batch_start" (a new batch is starting, with its item list),
+             "item_progress" (a single item's download progress),
+             "item_status" (a state change like finalizing),
+             "item_retry" (retrying a single item with a different client),
+             "item_done" (a single item finished, success or failure).
+    """
+
+    kind: str
+    index: int | None = None
+    title: str | None = None
+    downloaded_bytes: int | None = None
+    total_bytes: int | None = None
+    client: str | None = None
+    checked: int | None = None
+    total: int | None = None
+    batch: list | None = None
+    result: PlaylistItemResult | None = None
+
+
+# فارسی: امضای تابع callback که رویدادهای تخمین حجم/دانلود پلی‌لیست را دریافت می‌کند.
+# English: The signature of the callback function that receives playlist
+#          size-estimation/download events.
+PlaylistEventCallback = Callable[[PlaylistDownloadEvent], None]

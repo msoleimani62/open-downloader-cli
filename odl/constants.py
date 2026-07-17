@@ -7,10 +7,31 @@ English: Shared project constants — paths, defaults, and fixed mappings
 
 from __future__ import annotations
 
+import importlib.metadata
 from collections.abc import Callable
 from pathlib import Path
 
-ODL_VERSION: str = "2.3.1"
+# فارسی: نسخه فقط در یک جا تعریف می‌شود — بخش [project.version] در
+#        pyproject.toml. اینجا فقط از متادیتای پکیج نصب‌شده (چه با
+#        «pip install .» چه با «pip install -e .») می‌خوانیمش، تا هیچ‌وقت
+#        دوباره مثل این جلسه (2.3.1 -> 2.4.0 دستی در دو فایل) از هم عقب
+#        نیفتند. اگر پکیج اصلاً نصب نشده باشد (مثلاً اجرای مستقیم از روی
+#        سورس بدون pip install)، یک مقدار fallback ثابت استفاده می‌شود که
+#        فقط باید همزمان با bump کردن pyproject.toml آپدیت شود.
+# English: The version is defined in exactly one place — the
+#          [project.version] field in pyproject.toml. Here we only read
+#          it from the installed package's metadata (whether installed via
+#          "pip install ." or "pip install -e ."), so the two copies can
+#          never drift apart again like they did this session (2.3.1 ->
+#          2.4.0 bumped by hand in two files). If the package isn't
+#          installed at all (e.g. running straight from source without
+#          pip install), a fixed fallback is used — it only needs to be
+#          updated in lockstep with bumping pyproject.toml.
+try:
+    ODL_VERSION: str = importlib.metadata.version("open-downloader-cli")
+except importlib.metadata.PackageNotFoundError:
+    ODL_VERSION: str = "2.4.0"  # fallback برای اجرای مستقیم بدون نصب / fallback for running unpackaged
+
 GITHUB_REPO: str = "msoleimani62/open-downloader-cli"
 
 ALLOWED_QUALITIES: list[int] = [144, 240, 360, 480, 720, 1080, 1440, 2160]
@@ -24,6 +45,19 @@ DOWNLOAD_DIR_DEFAULT: Path = Path.home() / "Downloads" / "opendl"
 LOG_FILE: Path = CONFIG_DIR / "opendl.log"
 LOG_DIR: Path = CONFIG_DIR / "logs"
 PLAYLIST_STATE_DIR: Path = CONFIG_DIR / "playlist_state"
+SELF_UPDATE_CACHE_FILE: Path = CONFIG_DIR / "self_update_check.json"
+# فارسی: فاصله‌ی زمانی بین دو چک خودکار موفق (۴۸ ساعت) در برابر فاصله‌ی
+#        کوتاه‌تر بعد از یک چک ناموفق (۱ ساعت، مثلاً چون شبکه/VPN آن لحظه
+#        قطع بوده) — تا هم روی شبکه‌ی ناپایدار هر اجرا معطل نشود و هم بعد
+#        از وصل شدن دوباره‌ی شبکه، خیلی زود دوباره امتحان کند.
+# English: Interval between two successful automatic checks (48h) versus
+#          the shorter interval after a failed check (1h, e.g. because the
+#          network/VPN happened to be down at that moment) — so an
+#          unstable network doesn't stall every single run, while a check
+#          is retried soon after connectivity comes back.
+SELF_UPDATE_CHECK_INTERVAL_SECONDS: int = 48 * 3600
+SELF_UPDATE_RETRY_INTERVAL_SECONDS: int = 3600
+SELF_UPDATE_CHECK_TIMEOUT_SECONDS: int = 3
 
 BATCH_SIZE: int = 3
 # فارسی: قبلاً واقعاً بی‌نهایت بود (float('inf'))؛ مشکلش این بود که روی

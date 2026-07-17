@@ -13,7 +13,17 @@ import yt_dlp
 
 from . import constants as c
 from . import state
-from .config import load_config, parse_set_argument, save_default_config, write_config
+from .config import (
+    delete_profile,
+    get_profile,
+    load_config,
+    load_profiles,
+    parse_set_argument,
+    save_default_config,
+    save_profile,
+    validate_profile_settings,
+    write_config,
+)
 from .cookies import (
     CookieError,
     find_and_import_cookies_automatically,
@@ -24,9 +34,10 @@ from .cookies import (
     secure_cookies_setup,
     try_automatic_cookie_import,
 )
-from .diagnostics import run_check_self_update, run_check_update, run_doctor, run_update
+from .diagnostics import check_self_update_if_due, run_check_self_update, run_check_update, run_doctor, run_update
 from .downloader import build_extractor_args, download_single
 from .playlist import download_playlist
+from .validators import validate_batch_size, validate_quality
 from .proxy_pool import ProxyPoolError, load_proxy_candidates, resolve_working_proxy, save_cached_proxy, test_proxy
 from .state import console
 
@@ -155,6 +166,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
         metavar="KEY=VALUE",
         help="change a configuration setting, e.g. --set quality=720",
     )
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="use a saved download profile as the defaults for this run "
+        "(explicit flags on the command line still override it)",
+    )
+    parser.add_argument(
+        "--save-profile",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="save the flags given on this command line as a reusable profile, e.g. "
+        "'odl --save-profile fa1080 -q 1080 -fs' (no URL needed)",
+    )
+    parser.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="show all saved download profiles",
+    )
+    parser.add_argument(
+        "--delete-profile",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="delete a saved download profile",
+    )
     parser.add_argument("--version", action="version", version=f"Open Downloader CLI (odl) {c.ODL_VERSION}")
     return parser
 
@@ -192,6 +231,97 @@ def _run_set_config(arg: str) -> None:
     cfg[key] = value
     write_config(cfg)
     console.print(f"[green]✔ {key} set to {value!r}[/green]")
+
+
+def _run_save_profile(name: str, args: argparse.Namespace) -> None:
+    """
+    فارسی: مقادیر فلگ‌هایی که کاربر واقعاً در همین دستور داده (نه
+           پیش‌فرض‌های خالی) را به‌عنوان یک پروفایل نام‌دار ذخیره می‌کند —
+           دقیقاً مثل ضبط یک اکشن/ماکرو در فتوشاپ: هرچه الان تایپ کردی،
+           دفعه‌ی بعد فقط با «--profile NAME» دوباره اعمال می‌شود.
+    English: Save the flags the user actually gave on this command (not
+             the empty defaults) as a named profile — exactly like
+             recording a Photoshop action/macro: whatever was typed now
+             gets replayed later with just "--profile NAME".
+    """
+    settings: dict = {}
+    if args.quality is not None:
+        settings["quality"] = args.quality
+    if args.output is not None:
+        settings["download_dir"] = args.output
+    if args.batch is not None:
+        settings["batch_size"] = args.batch
+    if args.proxy is not None:
+        settings["proxy"] = args.proxy
+    if args.proxy_pool is not None:
+        settings["proxy_pool_source"] = args.proxy_pool
+    if args.player_client is not None:
+        settings["player_client"] = args.player_client
+    if args.bypass:
+        settings["bypass"] = True
+    if args.sub_en:
+        settings["sub_en"] = True
+    if args.sub_fa:
+        settings["sub_fa"] = True
+    if args.audio_only:
+        settings["audio_only"] = True
+    if args.playlist:
+        settings["playlist"] = True
+
+    if not settings:
+        console.print(
+            "[red]No flags were given to save. Combine --save-profile with the flags you "
+            "want, e.g.:[/red]"
+        )
+        console.print(f"  odl --save-profile {name} -q 1080 -fs")
+        sys.exit(1)
+
+    try:
+        validate_profile_settings(settings)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    save_profile(name, settings)
+    readable = ", ".join(f"{k}={v}" for k, v in settings.items())
+    console.print(f"[green]✔ Profile '{name}' saved:[/green] {readable}")
+    console.print(f"[dim]Use it with: odl --profile {name} <url>[/dim]")
+
+
+def _run_list_profiles() -> None:
+    """
+    فارسی: تمام پروفایل‌های ذخیره‌شده را در یک جدول نشان می‌دهد.
+    English: Show all saved profiles in a table.
+    """
+    from rich.table import Table
+
+    profiles = load_profiles()
+    if not profiles:
+        console.print(
+            "[yellow]No saved profiles yet. Create one with: "
+            "odl --save-profile NAME -q 1080 -fs (for example)[/yellow]"
+        )
+        return
+
+    table = Table(title="Saved Profiles")
+    table.add_column("Name")
+    table.add_column("Settings")
+    for name, settings in profiles.items():
+        readable = ", ".join(f"{k}={v}" for k, v in settings.items())
+        table.add_row(name, readable)
+    console.print(table)
+
+
+def _run_delete_profile(name: str) -> None:
+    """
+    فارسی: یک پروفایل ذخیره‌شده را حذف می‌کند.
+    English: Delete a saved profile.
+    """
+    if delete_profile(name):
+        console.print(f"[green]✔ Profile '{name}' deleted.[/green]")
+    else:
+        console.print(f"[red]No profile named '{name}'. See 'odl --list-profiles'.[/red]")
+        sys.exit(1)
 
 
 def _run_test_proxies(source: str) -> None:
@@ -323,6 +453,18 @@ def main() -> None:
         _run_set_config(args.set)
         sys.exit(0)
 
+    if args.list_profiles:
+        _run_list_profiles()
+        sys.exit(0)
+
+    if args.delete_profile:
+        _run_delete_profile(args.delete_profile)
+        sys.exit(0)
+
+    if args.save_profile:
+        _run_save_profile(args.save_profile, args)
+        sys.exit(0)
+
     if args.test_proxies:
         cfg_for_proxy_test = load_config()
         source = args.proxy_pool or cfg_for_proxy_test.get("proxy_pool_source")
@@ -359,6 +501,20 @@ def main() -> None:
         build_arg_parser().print_help()
         sys.exit(1)
 
+    # فارسی: این چک عمداً بعد از تمام مسیرهای تشخیصی/کانفیگ (که بالاتر
+    #        زودتر sys.exit می‌شوند) و فقط برای یک دانلود واقعی اجراست.
+    #        try/except اینجا حیاتی است: یک باگ پیش‌بینی‌نشده در این چک
+    #        نباید هرگز جلوی خود دانلود را بگیرد.
+    # English: This check deliberately runs after all diagnostic/config
+    #          paths (which sys.exit earlier, above) and only for an
+    #          actual download. The try/except here is critical: an
+    #          unforeseen bug in this check must never block the download
+    #          itself.
+    try:
+        check_self_update_if_due()
+    except Exception:
+        pass
+
     try_automatic_cookie_import(force=args.import_cookies)
 
     find_and_import_cookies_automatically(force=args.import_cookies)
@@ -374,22 +530,47 @@ def main() -> None:
     cfg = load_config()
     save_default_config()
 
-    quality = args.quality if args.quality is not None else cfg.get("quality", c.DEFAULT_QUALITY)
-    if quality not in c.ALLOWED_QUALITIES:
-        console.print(f"[red]Quality {quality} is not valid.[/red]")
-        console.print(f"Allowed qualities: {', '.join(map(str, c.ALLOWED_QUALITIES))}")
+    # فارسی: اولویت همه‌جای این بخش یکسان است: فلگ صریح خط فرمان > مقدار
+    #        پروفایل (اگر --profile داده شده) > کانفیگ دائمی > پیش‌فرض.
+    #        یعنی «odl --profile fa1080 -q 720 URL» همچنان 720 را برنده
+    #        می‌کند، نه مقدار داخل پروفایل — پروفایل یک پیش‌فرض قابل‌بازنویسی
+    #        است، نه یک قفل.
+    # English: The priority everywhere in this block is the same: an
+    #          explicit CLI flag > the profile's value (if --profile was
+    #          given) > the persistent config > the built-in default.
+    #          So "odl --profile fa1080 -q 720 URL" still uses 720, not
+    #          the profile's value — a profile is an overridable default,
+    #          not a lock.
+    profile: dict = {}
+    if args.profile:
+        found_profile = get_profile(args.profile)
+        if found_profile is None:
+            console.print(f"[red]No profile named '{args.profile}'. See 'odl --list-profiles'.[/red]")
+            sys.exit(1)
+        profile = found_profile
+        console.print(f"[dim]Using profile '{args.profile}'.[/dim]")
+
+    quality = args.quality if args.quality is not None else profile.get("quality", cfg.get("quality", c.DEFAULT_QUALITY))
+    try:
+        validate_quality(quality)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    out_dir = args.output if args.output else cfg.get("download_dir", str(c.DOWNLOAD_DIR_DEFAULT))
-    batch_size = args.batch if args.batch is not None else cfg.get("batch_size", c.BATCH_SIZE)
-    # فارسی: این چک صرفاً برای --set نیست؛ فایل کانفیگ ممکن است دستی
-    #        ویرایش شده باشد، پس باید همینجا هم دوباره اعتبارسنجی شود
-    #        وگرنه playlist.py با batch_size<=0 کرش می‌کند.
-    # English: This check is not only for --set; the config file may have
-    #          been hand-edited, so it must be re-validated here as well,
+    out_dir = args.output or profile.get("download_dir") or cfg.get("download_dir", str(c.DOWNLOAD_DIR_DEFAULT))
+    batch_size = args.batch if args.batch is not None else profile.get("batch_size", cfg.get("batch_size", c.BATCH_SIZE))
+    # فارسی: این چک صرفاً برای --set/پروفایل نیست؛ فایل کانفیگ ممکن است
+    #        دستی ویرایش شده باشد، پس باید همین‌جا هم (روی مقدار نهایی
+    #        resolve‌شده) دوباره با همان ولیدیتور مرکزی چک شود، وگرنه
+    #        playlist.py با batch_size<=0 کرش می‌کند.
+    # English: This check isn't only for --set/profiles; the config file
+    #          may have been hand-edited, so the final resolved value must
+    #          be re-validated here too with the same central validator,
     #          otherwise playlist.py crashes with batch_size<=0.
-    if batch_size < 1:
-        console.print(f"[red]batch_size must be 1 or greater, got {batch_size}.[/red]")
+    try:
+        validate_batch_size(batch_size)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
     # فارسی: اولویت پروکسی: (۱) --proxy صریح همیشه برنده است، (۲) اگر
@@ -398,20 +579,28 @@ def main() -> None:
     # English: Proxy priority: (1) an explicit --proxy always wins, (2) if
     #          a proxy pool is configured, automatically find a working
     #          proxy, (3) otherwise the static config proxy (if any).
-    proxy_pool_source = args.proxy_pool or cfg.get("proxy_pool_source")
+    proxy_pool_source = args.proxy_pool or profile.get("proxy_pool_source") or cfg.get("proxy_pool_source")
     if args.proxy:
         proxy = args.proxy
+    elif profile.get("proxy"):
+        proxy = profile["proxy"]
     elif proxy_pool_source:
         proxy = _resolve_proxy_via_pool(proxy_pool_source, args.proxy_pool_refresh)
     else:
         proxy = cfg.get("proxy")
 
-    allow_client_fallback = not bool(args.player_client)
+    player_client = args.player_client or profile.get("player_client")
+    allow_client_fallback = not bool(player_client)
 
-    if args.player_client:
-        cfg["player_client"] = args.player_client
-    bypass = args.bypass or cfg.get("bypass", False)
+    if player_client:
+        cfg["player_client"] = player_client
+    bypass = args.bypass or profile.get("bypass", False) or cfg.get("bypass", False)
     extractor_args = build_extractor_args(cfg, bypass)
+
+    sub_en = args.sub_en or profile.get("sub_en", False)
+    sub_fa = args.sub_fa or profile.get("sub_fa", False)
+    audio_only = args.audio_only or profile.get("audio_only", False)
+    playlist_mode = args.playlist or profile.get("playlist", False)
 
     if auto_cookies_path:
         cookies_path, cleanup_cookies = auto_cookies_path, auto_cleanup
@@ -444,15 +633,15 @@ def main() -> None:
         )
 
     try:
-        if args.playlist:
+        if playlist_mode:
             download_playlist(
                 args.url,
                 cookies_path,
                 quality,
-                args.sub_en,
-                args.sub_fa,
+                sub_en,
+                sub_fa,
                 out_dir,
-                args.audio_only,
+                audio_only,
                 batch_size,
                 proxy,
                 extractor_args,
@@ -464,10 +653,10 @@ def main() -> None:
                 args.url,
                 cookies_path,
                 quality,
-                args.sub_en,
-                args.sub_fa,
+                sub_en,
+                sub_fa,
                 out_dir,
-                args.audio_only,
+                audio_only,
                 proxy,
                 extractor_args,
                 allow_client_fallback,
