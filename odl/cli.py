@@ -37,9 +37,9 @@ from .cookies import (
 from .diagnostics import check_self_update_if_due, run_check_self_update, run_check_update, run_doctor, run_update
 from .downloader import build_extractor_args, download_single
 from .playlist import download_playlist
-from .validators import validate_batch_size, validate_quality
 from .proxy_pool import ProxyPoolError, load_proxy_candidates, resolve_working_proxy, save_cached_proxy, test_proxy
 from .state import console
+from .validators import validate_batch_size, validate_quality
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

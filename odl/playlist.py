@@ -33,7 +33,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 from .downloader import attempt_download_with_fallback, build_format, human_size, resolve_video_url
-from .logging_setup import log_download_error, log_info, log_warning
+from .logging_setup import log_download_error, log_info
 from .models import (
     DownloadEvent,
     DownloadRequest,
