@@ -6,6 +6,7 @@ English: Diagnostic tools — checking/performing yt-dlp updates, checking
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import platform
@@ -88,11 +89,9 @@ def _save_update_cache(data: dict) -> None:
              filesystem), that must never crash the program — it just
              means the next run checks again too.
     """
-    try:
+    with contextlib.suppress(Exception):
         c.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         c.SELF_UPDATE_CACHE_FILE.write_text(json.dumps(data), encoding="utf-8")
-    except Exception:
-        pass
 
 
 def run_check_self_update() -> None:
@@ -246,10 +245,8 @@ def _check_path_health() -> tuple[bool, str]:
 
     candidates = []
     for scheme in ("posix_user", "posix_prefix"):
-        try:
+        with contextlib.suppress(Exception):
             candidates.append(sysconfig.get_path("scripts", scheme))
-        except Exception:
-            pass
     # فارسی: حذف موارد تکراری با حفظ ترتیب (posix_user معمولاً محتمل‌تره).
     # English: De-duplicate while preserving order (posix_user is usually
     #          the more likely culprit).

@@ -6,6 +6,7 @@ English: The command-line argument parser and the main() function that wires all
 from __future__ import annotations
 
 import argparse
+import contextlib
 import platform
 import sys
 
@@ -503,17 +504,15 @@ def main() -> None:
 
     # فارسی: این چک عمداً بعد از تمام مسیرهای تشخیصی/کانفیگ (که بالاتر
     #        زودتر sys.exit می‌شوند) و فقط برای یک دانلود واقعی اجراست.
-    #        try/except اینجا حیاتی است: یک باگ پیش‌بینی‌نشده در این چک
-    #        نباید هرگز جلوی خود دانلود را بگیرد.
+    #        suppress(Exception) اینجا حیاتی است: یک باگ پیش‌بینی‌نشده در
+    #        این چک نباید هرگز جلوی خود دانلود را بگیرد.
     # English: This check deliberately runs after all diagnostic/config
     #          paths (which sys.exit earlier, above) and only for an
-    #          actual download. The try/except here is critical: an
-    #          unforeseen bug in this check must never block the download
-    #          itself.
-    try:
+    #          actual download. The suppress(Exception) here is critical:
+    #          an unforeseen bug in this check must never block the
+    #          download itself.
+    with contextlib.suppress(Exception):
         check_self_update_if_due()
-    except Exception:
-        pass
 
     try_automatic_cookie_import(force=args.import_cookies)
 

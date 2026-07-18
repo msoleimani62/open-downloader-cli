@@ -169,11 +169,10 @@ def detect_environment() -> Environment:
     """
     override = os.environ.get("ODL_FORCE_ENVIRONMENT", "").strip().upper()
     if override:
-        try:
+        # فارسی: مقدار نامعتبر بود؛ به تشخیص خودکار برمی‌گردیم
+        # English: invalid value; fall through to auto-detection
+        with contextlib.suppress(KeyError):
             return Environment[override]
-        except KeyError:
-            pass  # فارسی: مقدار نامعتبر بود؛ به تشخیص خودکار برمی‌گردیم
-            # English: invalid value; fall through to auto-detection
 
     if not sys.platform.startswith("linux"):
         return Environment.OTHER
