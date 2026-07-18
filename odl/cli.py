@@ -270,10 +270,7 @@ def _run_save_profile(name: str, args: argparse.Namespace) -> None:
         settings["playlist"] = True
 
     if not settings:
-        console.print(
-            "[red]No flags were given to save. Combine --save-profile with the flags you "
-            "want, e.g.:[/red]"
-        )
+        console.print("[red]No flags were given to save. Combine --save-profile with the flags you want, e.g.:[/red]")
         console.print(f"  odl --save-profile {name} -q 1080 -fs")
         sys.exit(1)
 
@@ -299,8 +296,7 @@ def _run_list_profiles() -> None:
     profiles = load_profiles()
     if not profiles:
         console.print(
-            "[yellow]No saved profiles yet. Create one with: "
-            "odl --save-profile NAME -q 1080 -fs (for example)[/yellow]"
+            "[yellow]No saved profiles yet. Create one with: odl --save-profile NAME -q 1080 -fs (for example)[/yellow]"
         )
         return
 
@@ -549,7 +545,9 @@ def main() -> None:
         profile = found_profile
         console.print(f"[dim]Using profile '{args.profile}'.[/dim]")
 
-    quality = args.quality if args.quality is not None else profile.get("quality", cfg.get("quality", c.DEFAULT_QUALITY))
+    quality = (
+        args.quality if args.quality is not None else profile.get("quality", cfg.get("quality", c.DEFAULT_QUALITY))
+    )
     try:
         validate_quality(quality)
     except ValueError as e:
@@ -557,7 +555,9 @@ def main() -> None:
         sys.exit(1)
 
     out_dir = args.output or profile.get("download_dir") or cfg.get("download_dir", str(c.DOWNLOAD_DIR_DEFAULT))
-    batch_size = args.batch if args.batch is not None else profile.get("batch_size", cfg.get("batch_size", c.BATCH_SIZE))
+    batch_size = (
+        args.batch if args.batch is not None else profile.get("batch_size", cfg.get("batch_size", c.BATCH_SIZE))
+    )
     # فارسی: این چک صرفاً برای --set/پروفایل نیست؛ فایل کانفیگ ممکن است
     #        دستی ویرایش شده باشد، پس باید همین‌جا هم (روی مقدار نهایی
     #        resolve‌شده) دوباره با همان ولیدیتور مرکزی چک شود، وگرنه

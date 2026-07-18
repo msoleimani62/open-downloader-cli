@@ -186,9 +186,7 @@ def execute_playlist_download(
         batch = videos[batch_start : batch_start + batch_size]
 
         if on_event is not None:
-            on_event(
-                PlaylistDownloadEvent(kind="batch_start", batch=[(idx, title) for idx, _, title, _ in batch])
-            )
+            on_event(PlaylistDownloadEvent(kind="batch_start", batch=[(idx, title) for idx, _, title, _ in batch]))
 
         def worker(idx: int, video_url: str | None, title: str, video_id: str | None) -> PlaylistItemResult:
             if not video_url:
@@ -227,9 +225,7 @@ def execute_playlist_download(
                     # English: attempt_download_with_fallback already logs this retry
                     #          to the log file; this is only to notify the UI layer
                     #          (e.g. showing "retrying..." on the progress bar).
-                    on_event(
-                        PlaylistDownloadEvent(kind="item_retry", index=idx, title=title, client=evt.client)
-                    )
+                    on_event(PlaylistDownloadEvent(kind="item_retry", index=idx, title=title, client=evt.client))
 
             request = DownloadRequest(
                 url=video_url,
@@ -259,8 +255,7 @@ def execute_playlist_download(
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(batch)) as executor:
             futures = [
-                executor.submit(worker, idx, video_url, title, video_id)
-                for idx, video_url, title, video_id in batch
+                executor.submit(worker, idx, video_url, title, video_id) for idx, video_url, title, video_id in batch
             ]
             for future in concurrent.futures.as_completed(futures):
                 results.append(future.result())

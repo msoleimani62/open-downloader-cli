@@ -159,7 +159,11 @@ def check_self_update_if_due() -> None:
 
     latest_tag = _fetch_latest_release_tag(timeout=c.SELF_UPDATE_CHECK_TIMEOUT_SECONDS)
     _save_update_cache(
-        {"last_check_ts": now, "last_check_ok": latest_tag is not None, "latest_tag": latest_tag or cache.get("latest_tag", "")}
+        {
+            "last_check_ts": now,
+            "last_check_ok": latest_tag is not None,
+            "latest_tag": latest_tag or cache.get("latest_tag", ""),
+        }
     )
 
     if not latest_tag:
